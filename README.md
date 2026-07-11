@@ -36,6 +36,14 @@ bash Termux/install.sh
 bash Termux/run.sh
 ```
 
+AITermux 直接 clone 本仓库时，也可使用根目录兼容入口：
+
+```bash
+./run.sh
+```
+
+根目录 `run.sh` 与 `projectling.zsh` 只是兼容桥，仍执行 `app/` 中与 Windows 相同的核心源码，不维护独立 Termux 实现。
+
 ## 交互入口
 
 - `/settings`：统一设置中心，包含 Provider、Key、模型、Gemini 参数、WebSearch 和连通测试。
@@ -48,6 +56,8 @@ bash Termux/run.sh
 
 ```text
 PROJECT凌.exe       Windows 启动入口
+run.sh              AITermux/Termux 根目录兼容入口
+projectling.zsh      AITermux zsh 兼容入口
 app/                Windows 与 Termux 共用核心程序
 Windows/            Windows 诊断入口与说明
 Termux/             Termux 安装、启动与说明

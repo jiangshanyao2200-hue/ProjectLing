@@ -1,8 +1,8 @@
 # PROJECT凌 GitHub Build
 
-- version: v1.0.0
+- version: v1.0.1
 - edition: public-clean
-- generated_at: 2026-07-12T01:26:24.7172510+08:00
+- generated_at: 2026-07-12T05:27:38.4937293+08:00
 - source_commit: 24e4c468926af1da94c1e0b2f9954385091907f2
 - source_dirty: true
 - user_state_included: false

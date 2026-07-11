@@ -1,0 +1,6 @@
+*.sh text eol=lf
+*.zsh text eol=lf
+run.sh text eol=lf
+projectling.zsh text eol=lf
+Termux/* text eol=lf
+app/aidebug/bin/* text eol=lf
