@@ -1,0 +1,2195 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-11T13:23:58Z",
+  "endpoint": "https://fast.aieyra.cn/v1",
+  "provider": "gemini",
+  "parameters": [
+    "temperature",
+    "top_p",
+    "top_k",
+    "max_tokens",
+    "json_output"
+  ],
+  "summary": {
+    "probe_count": 105,
+    "classifications": {
+      "accepted_unverified": 97,
+      "model_unavailable": 6,
+      "request_error": 2
+    }
+  },
+  "models": [
+    {
+      "model": "gemini-2.5-flash",
+      "category": "flash",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash",
+          "response_model": "gemini-2.5-flash",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 21.438
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash",
+          "response_model": "gemini-2.5-flash",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 2.734
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash",
+          "response_model": "gemini-2.5-flash",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 9.141
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash",
+          "response_model": "gemini-2.5-flash",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 8.359
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash",
+          "response_model": "gemini-2.5-flash",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "```json {   \"ok\": true } ```",
+          "usage": {
+            "prompt_tokens": 11,
+            "completion_tokens": 14,
+            "total_tokens": 25,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 11
+          },
+          "latency_seconds": 18.563
+        }
+      }
+    },
+    {
+      "model": "gemini-2.5-flash-image",
+      "category": "image",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash-image",
+          "thinking_enabled": true,
+          "response_model": "gemini-2.5-flash-image",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 2.594
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash-image",
+          "thinking_enabled": true,
+          "response_model": "gemini-2.5-flash-image",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 2.203
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash-image",
+          "thinking_enabled": true,
+          "response_model": "gemini-2.5-flash-image",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 2.188
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash-image",
+          "thinking_enabled": true,
+          "response_model": "gemini-2.5-flash-image",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.687
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash-image",
+          "thinking_enabled": true,
+          "response_model": "gemini-2.5-flash-image",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 1,
+            "total_tokens": 13,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 12
+          },
+          "latency_seconds": 1.656
+        }
+      }
+    },
+    {
+      "model": "gemini-2.5-flash-thinking",
+      "category": "thinking",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash-thinking",
+          "response_model": "gemini-2.5-flash-thinking",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 2.609
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash-thinking",
+          "response_model": "gemini-2.5-flash-thinking",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 2.204
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash-thinking",
+          "response_model": "gemini-2.5-flash-thinking",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 3.046
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash-thinking",
+          "response_model": "gemini-2.5-flash-thinking",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 2.594
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-2.5-flash-thinking",
+          "response_model": "gemini-2.5-flash-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "```json {   \"ok\": true } ```",
+          "usage": {
+            "prompt_tokens": 11,
+            "completion_tokens": 14,
+            "total_tokens": 25,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 11
+          },
+          "latency_seconds": 3.016
+        }
+      }
+    },
+    {
+      "model": "gemini-2.5-pro",
+      "category": "pro",
+      "probes": {
+        "temperature": {
+          "ok": false,
+          "classification": "model_unavailable",
+          "local_sent": true,
+          "request_model": "gemini-2.5-pro",
+          "thinking_enabled": false,
+          "error_type": "DeepSeekAPIError",
+          "error": "channel_circuit_open",
+          "http_status": 503,
+          "latency_seconds": 3.125
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-2.5-pro",
+          "thinking_enabled": false,
+          "response_model": "gemini-2.5-pro",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 20,
+            "total_tokens": 27,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 3.188
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-2.5-pro",
+          "thinking_enabled": false,
+          "response_model": "gemini-2.5-pro",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 141,
+            "total_tokens": 148,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 31.734
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-2.5-pro",
+          "thinking_enabled": false,
+          "response_model": "gemini-2.5-pro",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 173,
+            "total_tokens": 180,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 27.547
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-2.5-pro",
+          "thinking_enabled": false,
+          "response_model": "gemini-2.5-pro",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 11,
+            "completion_tokens": 21,
+            "total_tokens": 32,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 11
+          },
+          "latency_seconds": 5.516
+        }
+      }
+    },
+    {
+      "model": "gemini-2.5-pro-thinking",
+      "category": "thinking",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-2.5-pro-thinking",
+          "response_model": "gemini-2.5-pro-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 20,
+            "total_tokens": 27,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 4.25
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-2.5-pro-thinking",
+          "response_model": "gemini-2.5-pro-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 20,
+            "total_tokens": 27,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 3.875
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-2.5-pro-thinking",
+          "response_model": "gemini-2.5-pro-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 20,
+            "total_tokens": 27,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 5.468
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-2.5-pro-thinking",
+          "response_model": "gemini-2.5-pro-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 4,
+            "total_tokens": 11,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 5.579
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-2.5-pro-thinking",
+          "response_model": "gemini-2.5-pro-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 11,
+            "completion_tokens": 21,
+            "total_tokens": 32,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 11
+          },
+          "latency_seconds": 3.109
+        }
+      }
+    },
+    {
+      "model": "gemini-3-flash",
+      "category": "flash",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3-flash",
+          "response_model": "gemini-3-flash",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.984
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3-flash",
+          "response_model": "gemini-3-flash",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.735
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-3-flash",
+          "response_model": "gemini-3-flash",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 2.062
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-3-flash",
+          "response_model": "gemini-3-flash",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 2.125
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3-flash",
+          "response_model": "gemini-3-flash",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "{   \"ok\": true }",
+          "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 9,
+            "total_tokens": 21,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 12
+          },
+          "latency_seconds": 1.703
+        }
+      }
+    },
+    {
+      "model": "gemini-3-flash-agent",
+      "category": "agent",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3-flash-agent",
+          "response_model": "gemini-3-flash-agent",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 2.922
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3-flash-agent",
+          "response_model": "gemini-3-flash-agent",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.61
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-3-flash-agent",
+          "response_model": "gemini-3-flash-agent",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.656
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-3-flash-agent",
+          "response_model": "gemini-3-flash-agent",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.656
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3-flash-agent",
+          "response_model": "gemini-3-flash-agent",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "{   \"ok\": true }",
+          "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 9,
+            "total_tokens": 21,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 12
+          },
+          "latency_seconds": 1.609
+        }
+      }
+    },
+    {
+      "model": "gemini-3-flash-preview",
+      "category": "flash",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3-flash-preview",
+          "response_model": "gemini-3-flash-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 3.141
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3-flash-preview",
+          "response_model": "gemini-3-flash-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 5.484
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-3-flash-preview",
+          "response_model": "gemini-3-flash-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 9.766
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-3-flash-preview",
+          "response_model": "gemini-3-flash-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 6.453
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3-flash-preview",
+          "response_model": "gemini-3-flash-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "{   \"ok\": true }",
+          "usage": {
+            "prompt_tokens": 11,
+            "completion_tokens": 9,
+            "total_tokens": 20,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 11
+          },
+          "latency_seconds": 2.797
+        }
+      }
+    },
+    {
+      "model": "gemini-3-pro-image-preview",
+      "category": "image",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3-pro-image-preview",
+          "thinking_enabled": true,
+          "response_model": "gemini-3-pro-image-preview",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 21,
+            "total_tokens": 29,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 3.0
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3-pro-image-preview",
+          "thinking_enabled": true,
+          "response_model": "gemini-3-pro-image-preview",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "![image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAACAAAAAgACAIAAAA9xURnAAZC52NhQlgABkLnanVtYgAAAB5qdW1kYzJwYQARABCAAACqADibcQNjMnBhAAACJvNqdW1iAAAAR2p1bWRjM",
+          "usage": {
+            "prompt_tokens": 23,
+            "completion_tokens": 1111,
+            "total_tokens": 1111,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 23
+          },
+          "latency_seconds": 47.328
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-3-pro-image-preview",
+          "thinking_enabled": true,
+          "response_model": "gemini-3-pro-image-preview",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "![image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAACAAAAAgACAIAAAA9xURnAAjUm2NhQlgACNSbanVtYgAAAB5qdW1kYzJwYQARABCAAACqADibcQNjMnBhAAADAi1qdW1iAAAAR2p1bWRjM",
+          "usage": {
+            "prompt_tokens": 23,
+            "completion_tokens": 1143,
+            "total_tokens": 1143,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 23
+          },
+          "latency_seconds": 53.0
+        },
+        "max_tokens": {
+          "ok": false,
+          "classification": "request_error",
+          "local_sent": true,
+          "request_model": "gemini-3-pro-image-preview",
+          "thinking_enabled": true,
+          "error_type": "DeepSeekAPIError",
+          "error": "network_timeout",
+          "http_status": null,
+          "latency_seconds": 55.375
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3-pro-image-preview",
+          "thinking_enabled": true,
+          "response_model": "gemini-3-pro-image-preview",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 21,
+            "total_tokens": 33,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 12
+          },
+          "latency_seconds": 3.312
+        }
+      }
+    },
+    {
+      "model": "gemini-3-pro-preview",
+      "category": "pro",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3-pro-preview",
+          "response_model": "gemini-3-pro-preview",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 21,
+            "total_tokens": 28,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 3.375
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3-pro-preview",
+          "response_model": "gemini-3-pro-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 131,
+            "total_tokens": 138,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 7.265
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-3-pro-preview",
+          "response_model": "gemini-3-pro-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 92,
+            "total_tokens": 99,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 8.031
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-3-pro-preview",
+          "response_model": "gemini-3-pro-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 92,
+            "total_tokens": 99,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 22.641
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3-pro-preview",
+          "response_model": "gemini-3-pro-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "{   \"ok\": true }",
+          "usage": {
+            "prompt_tokens": 11,
+            "completion_tokens": 195,
+            "total_tokens": 206,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 11
+          },
+          "latency_seconds": 14.344
+        }
+      }
+    },
+    {
+      "model": "gemini-3-pro-preview-thinking",
+      "category": "thinking",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3-pro-preview-thinking",
+          "response_model": "gemini-3-pro-preview-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 21,
+            "total_tokens": 28,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 12.578
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3-pro-preview-thinking",
+          "response_model": "gemini-3-pro-preview-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 21,
+            "total_tokens": 28,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 6.484
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-3-pro-preview-thinking",
+          "response_model": "gemini-3-pro-preview-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 21,
+            "total_tokens": 28,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 6.094
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-3-pro-preview-thinking",
+          "response_model": "gemini-3-pro-preview-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 5,
+            "total_tokens": 12,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 5.953
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3-pro-preview-thinking",
+          "response_model": "gemini-3-pro-preview-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 11,
+            "completion_tokens": 21,
+            "total_tokens": 32,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 11
+          },
+          "latency_seconds": 6.531
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-flash-image",
+      "category": "image",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-image",
+          "response_model": "gemini-3.1-flash-image",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 3.235
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-image",
+          "response_model": "gemini-3.1-flash-image",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 2.265
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-image",
+          "response_model": "gemini-3.1-flash-image",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 2.282
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-image",
+          "response_model": "gemini-3.1-flash-image",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 4.422
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-image",
+          "response_model": "gemini-3.1-flash-image",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "```json {\"ok\": true} ```",
+          "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 10,
+            "total_tokens": 22,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 12
+          },
+          "latency_seconds": 4.031
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-flash-image-preview",
+      "category": "image",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-image-preview",
+          "thinking_enabled": true,
+          "response_model": "gemini-3.1-flash-image-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.938
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-image-preview",
+          "thinking_enabled": true,
+          "response_model": "gemini-3.1-flash-image-preview",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "![image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAACAAAAAgACAIAAAA9xURnAARRDmNhQlgABFEOanVtYgAAAB5qdW1kYzJwYQARABCAAACqADibcQNjMnBhAAABgQBqdW1iAAAAR2p1bWRjM",
+          "usage": {
+            "prompt_tokens": 23,
+            "completion_tokens": 1292,
+            "total_tokens": 1292,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 23
+          },
+          "latency_seconds": 42.422
+        },
+        "top_k": {
+          "ok": false,
+          "classification": "request_error",
+          "local_sent": true,
+          "request_model": "gemini-3.1-flash-image-preview",
+          "thinking_enabled": true,
+          "error_type": "DeepSeekAPIError",
+          "error": "network_timeout",
+          "http_status": null,
+          "latency_seconds": 55.39
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-image-preview",
+          "thinking_enabled": true,
+          "response_model": "gemini-3.1-flash-image-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 2.985
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-image-preview",
+          "thinking_enabled": true,
+          "response_model": "gemini-3.1-flash-image-preview",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "```json {   \"ok\": true } ```",
+          "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 14,
+            "total_tokens": 26,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 12
+          },
+          "latency_seconds": 3.297
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-flash-lite",
+      "category": "lite",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-lite",
+          "response_model": "gemini-3.1-flash-lite",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.532
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-lite",
+          "response_model": "gemini-3.1-flash-lite",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.25
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-lite",
+          "response_model": "gemini-3.1-flash-lite",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.093
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-lite",
+          "response_model": "gemini-3.1-flash-lite",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.157
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3.1-flash-lite",
+          "response_model": "gemini-3.1-flash-lite",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "{\"ok\": true}",
+          "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 5,
+            "total_tokens": 17,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 12
+          },
+          "latency_seconds": 1.14
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-pro-high",
+      "category": "pro",
+      "probes": {
+        "temperature": {
+          "ok": false,
+          "classification": "model_unavailable",
+          "local_sent": true,
+          "request_model": "gemini-3.1-pro-high",
+          "thinking_enabled": false,
+          "error_type": "DeepSeekAPIError",
+          "error": "channel_circuit_open",
+          "http_status": 503,
+          "latency_seconds": 3.125
+        },
+        "top_p": {
+          "ok": false,
+          "classification": "model_unavailable",
+          "local_sent": true,
+          "request_model": "gemini-3.1-pro-high",
+          "thinking_enabled": false,
+          "error_type": "DeepSeekAPIError",
+          "error": "channel_circuit_open",
+          "http_status": 503,
+          "latency_seconds": 0.703
+        },
+        "top_k": {
+          "ok": false,
+          "classification": "model_unavailable",
+          "local_sent": true,
+          "request_model": "gemini-3.1-pro-high",
+          "thinking_enabled": false,
+          "error_type": "DeepSeekAPIError",
+          "error": "channel_circuit_open",
+          "http_status": 503,
+          "latency_seconds": 0.703
+        },
+        "max_tokens": {
+          "ok": false,
+          "classification": "model_unavailable",
+          "local_sent": true,
+          "request_model": "gemini-3.1-pro-high",
+          "thinking_enabled": false,
+          "error_type": "DeepSeekAPIError",
+          "error": "channel_circuit_open",
+          "http_status": 503,
+          "latency_seconds": 0.687
+        },
+        "json_output": {
+          "ok": false,
+          "classification": "model_unavailable",
+          "local_sent": true,
+          "request_model": "gemini-3.1-pro-high",
+          "thinking_enabled": false,
+          "error_type": "DeepSeekAPIError",
+          "error": "channel_circuit_open",
+          "http_status": 503,
+          "latency_seconds": 0.641
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "category": "pro",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-low",
+          "response_model": "gemini-3.1-pro-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 141,
+            "total_tokens": 149,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 3.656
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-low",
+          "response_model": "gemini-3.1-pro-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 148,
+            "completion_tokens": 106,
+            "total_tokens": 254,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 148
+          },
+          "latency_seconds": 2.391
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-low",
+          "response_model": "gemini-3.1-pro-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 113,
+            "completion_tokens": 127,
+            "total_tokens": 240,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 113
+          },
+          "latency_seconds": 2.75
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-low",
+          "response_model": "gemini-3.1-pro-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 134,
+            "completion_tokens": 106,
+            "total_tokens": 240,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 134
+          },
+          "latency_seconds": 2.656
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-low",
+          "response_model": "gemini-3.1-pro-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "{   \"ok\": true }",
+          "usage": {
+            "prompt_tokens": 117,
+            "completion_tokens": 192,
+            "total_tokens": 309,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 117
+          },
+          "latency_seconds": 3.688
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-pro-preview",
+      "category": "pro",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-preview",
+          "response_model": "gemini-3.1-pro-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 92,
+            "total_tokens": 99,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 11.156
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-preview",
+          "response_model": "gemini-3.1-pro-preview",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 21,
+            "total_tokens": 28,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 3.328
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-preview",
+          "response_model": "gemini-3.1-pro-preview",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 21,
+            "total_tokens": 28,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 3.641
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-preview",
+          "response_model": "gemini-3.1-pro-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 149,
+            "total_tokens": 156,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 7.75
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-preview",
+          "response_model": "gemini-3.1-pro-preview",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "{   \"ok\": true }",
+          "usage": {
+            "prompt_tokens": 11,
+            "completion_tokens": 242,
+            "total_tokens": 253,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 11
+          },
+          "latency_seconds": 11.187
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-pro-preview-thinking",
+      "category": "thinking",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-preview-thinking",
+          "response_model": "gemini-3.1-pro-preview-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 21,
+            "total_tokens": 28,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 6.125
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-preview-thinking",
+          "response_model": "gemini-3.1-pro-preview-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 21,
+            "total_tokens": 28,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 4.813
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-preview-thinking",
+          "response_model": "gemini-3.1-pro-preview-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 21,
+            "total_tokens": 28,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 4.593
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-preview-thinking",
+          "response_model": "gemini-3.1-pro-preview-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 5,
+            "total_tokens": 12,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 5.704
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3.1-pro-preview-thinking",
+          "response_model": "gemini-3.1-pro-preview-thinking",
+          "model_match": true,
+          "content_ok": false,
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 11,
+            "completion_tokens": 21,
+            "total_tokens": 32,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 11
+          },
+          "latency_seconds": 6.109
+        }
+      }
+    },
+    {
+      "model": "gemini-3.5-flash-extra-low",
+      "category": "flash",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3.5-flash-extra-low",
+          "response_model": "gemini-3.5-flash-extra-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 58,
+            "total_tokens": 66,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.531
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3.5-flash-extra-low",
+          "response_model": "gemini-3.5-flash-extra-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 65,
+            "completion_tokens": 1,
+            "total_tokens": 66,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 65
+          },
+          "latency_seconds": 1.172
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-3.5-flash-extra-low",
+          "response_model": "gemini-3.5-flash-extra-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 94,
+            "total_tokens": 102,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.563
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-3.5-flash-extra-low",
+          "response_model": "gemini-3.5-flash-extra-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 101,
+            "completion_tokens": 1,
+            "total_tokens": 102,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 101
+          },
+          "latency_seconds": 1.218
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3.5-flash-extra-low",
+          "response_model": "gemini-3.5-flash-extra-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "{   \"ok\": true }",
+          "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 9,
+            "total_tokens": 21,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 12
+          },
+          "latency_seconds": 1.219
+        }
+      }
+    },
+    {
+      "model": "gemini-3.5-flash-low",
+      "category": "flash",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-3.5-flash-low",
+          "response_model": "gemini-3.5-flash-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 65,
+            "total_tokens": 73,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.25
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-3.5-flash-low",
+          "response_model": "gemini-3.5-flash-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 72,
+            "completion_tokens": 1,
+            "total_tokens": 73,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 72
+          },
+          "latency_seconds": 1.0
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-3.5-flash-low",
+          "response_model": "gemini-3.5-flash-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 78,
+            "total_tokens": 86,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.625
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-3.5-flash-low",
+          "response_model": "gemini-3.5-flash-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 85,
+            "completion_tokens": 68,
+            "total_tokens": 153,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 85
+          },
+          "latency_seconds": 1.484
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-3.5-flash-low",
+          "response_model": "gemini-3.5-flash-low",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "{\"ok\": true}",
+          "usage": {
+            "prompt_tokens": 79,
+            "completion_tokens": 146,
+            "total_tokens": 225,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 79
+          },
+          "latency_seconds": 1.594
+        }
+      }
+    },
+    {
+      "model": "gemini-pro-agent",
+      "category": "agent",
+      "probes": {
+        "temperature": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.37,
+          "http_status": 200,
+          "request_model": "gemini-pro-agent",
+          "response_model": "gemini-pro-agent",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 103,
+            "total_tokens": 111,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 3.078
+        },
+        "top_p": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 0.73,
+          "http_status": 200,
+          "request_model": "gemini-pro-agent",
+          "response_model": "gemini-pro-agent",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 111,
+            "completion_tokens": 1,
+            "total_tokens": 112,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 111
+          },
+          "latency_seconds": 2.25
+        },
+        "top_k": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 17,
+          "http_status": 200,
+          "request_model": "gemini-pro-agent",
+          "response_model": "gemini-pro-agent",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 111,
+            "completion_tokens": 1,
+            "total_tokens": 112,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 111
+          },
+          "latency_seconds": 2.047
+        },
+        "max_tokens": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": 8,
+          "http_status": 200,
+          "request_model": "gemini-pro-agent",
+          "response_model": "gemini-pro-agent",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "pong",
+          "usage": {
+            "prompt_tokens": 111,
+            "completion_tokens": 1,
+            "total_tokens": 112,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 111
+          },
+          "latency_seconds": 2.281
+        },
+        "json_output": {
+          "ok": true,
+          "classification": "accepted_unverified",
+          "local_sent": true,
+          "sent_value": "application/json",
+          "http_status": 200,
+          "request_model": "gemini-pro-agent",
+          "response_model": "gemini-pro-agent",
+          "model_match": true,
+          "content_ok": true,
+          "content_preview": "{\"ok\": true}",
+          "usage": {
+            "prompt_tokens": 115,
+            "completion_tokens": 217,
+            "total_tokens": 332,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 115
+          },
+          "latency_seconds": 3.985
+        }
+      }
+    }
+  ],
+  "reconciled_at": "2026-07-11T13:23:58Z"
+}

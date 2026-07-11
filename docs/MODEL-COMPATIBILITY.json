@@ -1,0 +1,1554 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-11T13:46:49Z",
+  "endpoint": "https://fast.aieyra.cn/v1",
+  "provider": "gemini",
+  "configured_models": {
+    "planner": "gemini-3.5-flash-low",
+    "executor": "gemini-3-flash"
+  },
+  "channel_observation": {
+    "generated_at": "2026-07-10T06:05:00Z",
+    "source": "read-only SSH query of main-site New API SQLite channels table",
+    "host": "aieyra.cn main site",
+    "active_channel_count": 6,
+    "current_token_group": "Gemini",
+    "current_group_channel_ids": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "current_group_model_union_count": 23,
+    "luna_match_count": 0,
+    "exact_5_6_compact_exposed": false,
+    "related_codex_models_not_exposed_to_current_token": [
+      "gpt-5.6-terra",
+      "gpt-5.6-sol",
+      "gpt-5.5-openai-compact",
+      "gpt-5.4-openai-compact"
+    ],
+    "notes": [
+      "No channel name, tag, remark, model mapping, settings, overrides, other metadata, or model list contained luna.",
+      "The exact model name gpt-5.6-openai-compact was absent.",
+      "The related CODEX models belong to channel group Week,Month,CODEX and are not returned by the current Gemini token's /v1/models response."
+    ]
+  },
+  "summary": {
+    "model_count": 23,
+    "recommended": 6,
+    "usable_limited": 10,
+    "diagnostic_only": 5,
+    "incompatible": 1,
+    "unavailable": 1,
+    "incompatible_or_unavailable": 2
+  },
+  "models": [
+    {
+      "model": "claude-opus-4-6-thinking",
+      "category": "claude",
+      "configured_role": "",
+      "verdict": "usable_limited",
+      "projectling_support": "limited",
+      "reasons": [
+        "text",
+        "sse",
+        "tool",
+        "specialized_claude"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 16,
+            "completion_tokens": 5,
+            "total_tokens": 21,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 16
+          },
+          "latency_seconds": 27.063
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 7,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 16,
+            "completion_tokens": 5,
+            "total_tokens": 21,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 16
+          },
+          "latency_seconds": 2.89
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 584,
+            "completion_tokens": 55,
+            "total_tokens": 639,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 584
+          },
+          "latency_seconds": 3.235
+        },
+        "thinking": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "reasoning_present": false,
+          "reasoning_chars": 0,
+          "usage": {
+            "prompt_tokens": 21,
+            "completion_tokens": 5,
+            "total_tokens": 26,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 21
+          },
+          "latency_seconds": 5.89
+        }
+      }
+    },
+    {
+      "model": "claude-sonnet-4-6",
+      "category": "claude",
+      "configured_role": "",
+      "verdict": "usable_limited",
+      "projectling_support": "limited",
+      "reasons": [
+        "text",
+        "sse",
+        "tool",
+        "specialized_claude"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 16,
+            "completion_tokens": 5,
+            "total_tokens": 21,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 16
+          },
+          "latency_seconds": 2.953
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 7,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 16,
+            "completion_tokens": 5,
+            "total_tokens": 21,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 16
+          },
+          "latency_seconds": 2.422
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 584,
+            "completion_tokens": 55,
+            "total_tokens": 639,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 584
+          },
+          "latency_seconds": 3.422
+        }
+      }
+    },
+    {
+      "model": "gemini-2.5-flash",
+      "category": "flash",
+      "configured_role": "",
+      "verdict": "usable_limited",
+      "projectling_support": "limited",
+      "reasons": [
+        "text",
+        "tool",
+        "partial_contract"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 5.344
+        },
+        "stream": {
+          "ok": false,
+          "status": "error",
+          "latency_seconds": 0.625,
+          "error_type": "DeepSeekAPIError",
+          "error": "channel_circuit_open",
+          "http_status": 503
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 34,
+            "completion_tokens": 5,
+            "total_tokens": 39,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 34
+          },
+          "latency_seconds": 4.859
+        }
+      }
+    },
+    {
+      "model": "gemini-2.5-flash-image",
+      "category": "image",
+      "configured_role": "",
+      "verdict": "incompatible",
+      "projectling_support": "unsupported",
+      "reasons": [
+        "specialized_image"
+      ],
+      "probes": {
+        "text": {
+          "ok": false,
+          "status": "error",
+          "latency_seconds": 3.344,
+          "error_type": "DeepSeekAPIError",
+          "error": "thinking_mode_conflict",
+          "http_status": 400
+        },
+        "stream": {
+          "ok": false,
+          "status": "error",
+          "latency_seconds": 2.906,
+          "error_type": "DeepSeekAPIError",
+          "error": "thinking_mode_conflict",
+          "http_status": 400
+        },
+        "tool": {
+          "ok": false,
+          "status": "error",
+          "latency_seconds": 2.953,
+          "error_type": "DeepSeekAPIError",
+          "error": "upstream_http_error",
+          "http_status": 400
+        }
+      }
+    },
+    {
+      "model": "gemini-2.5-flash-thinking",
+      "category": "thinking",
+      "configured_role": "",
+      "verdict": "usable_limited",
+      "projectling_support": "limited",
+      "reasons": [
+        "text",
+        "sse",
+        "tool",
+        "specialized_thinking"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 2.141
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 4,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 3.984
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 38,
+            "completion_tokens": 5,
+            "total_tokens": 43,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 38
+          },
+          "latency_seconds": 2.235
+        },
+        "thinking": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "reasoning_present": true,
+          "reasoning_chars": 348,
+          "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 15,
+            "total_tokens": 27,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 12
+          },
+          "latency_seconds": 3.062
+        }
+      }
+    },
+    {
+      "model": "gemini-2.5-pro",
+      "category": "pro",
+      "configured_role": "",
+      "verdict": "recommended",
+      "projectling_support": "stable",
+      "reasons": [
+        "text",
+        "sse",
+        "tool"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": true,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 284,
+            "total_tokens": 291,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 10.688
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 6,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": true,
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 173,
+            "total_tokens": 180,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 15.031
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 38,
+            "completion_tokens": 204,
+            "total_tokens": 242,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 38
+          },
+          "latency_seconds": 4.563
+        }
+      }
+    },
+    {
+      "model": "gemini-2.5-pro-thinking",
+      "category": "thinking",
+      "configured_role": "",
+      "verdict": "usable_limited",
+      "projectling_support": "limited",
+      "reasons": [
+        "text",
+        "sse",
+        "tool",
+        "specialized_thinking"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": true,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 141,
+            "total_tokens": 148,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 4.937
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 6,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": true,
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 141,
+            "total_tokens": 148,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 12.016
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 38,
+            "completion_tokens": 226,
+            "total_tokens": 264,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 38
+          },
+          "latency_seconds": 5.828
+        },
+        "thinking": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "reasoning_present": true,
+          "reasoning_chars": 500,
+          "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 182,
+            "total_tokens": 194,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 12
+          },
+          "latency_seconds": 5.484
+        }
+      }
+    },
+    {
+      "model": "gemini-3-flash",
+      "category": "flash",
+      "configured_role": "executor",
+      "verdict": "recommended",
+      "projectling_support": "stable",
+      "reasons": [
+        "text",
+        "sse",
+        "tool",
+        "configured_executor"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.656
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 5,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.641
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 69,
+            "completion_tokens": 16,
+            "total_tokens": 85,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 69
+          },
+          "latency_seconds": 1.563
+        }
+      }
+    },
+    {
+      "model": "gemini-3-flash-agent",
+      "category": "agent",
+      "configured_role": "",
+      "verdict": "diagnostic_only",
+      "projectling_support": "unsupported",
+      "reasons": [
+        "text",
+        "sse",
+        "tool",
+        "specialized_agent"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.718
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 5,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.844
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 69,
+            "completion_tokens": 16,
+            "total_tokens": 85,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 69
+          },
+          "latency_seconds": 3.063
+        }
+      }
+    },
+    {
+      "model": "gemini-3-flash-preview",
+      "category": "flash",
+      "configured_role": "",
+      "verdict": "usable_limited",
+      "projectling_support": "stable",
+      "reasons": [
+        "text",
+        "sse",
+        "tool"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 2.531
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 5,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 1,
+            "total_tokens": 8,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 5.437
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 48,
+            "completion_tokens": 16,
+            "total_tokens": 64,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 48
+          },
+          "latency_seconds": 5.453
+        }
+      }
+    },
+    {
+      "model": "gemini-3-pro-image-preview",
+      "category": "image",
+      "configured_role": "",
+      "verdict": "diagnostic_only",
+      "projectling_support": "unsupported",
+      "reasons": [
+        "text",
+        "tool",
+        "specialized_image"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 124,
+            "total_tokens": 132,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 4.563
+        },
+        "stream": {
+          "ok": false,
+          "status": "limited",
+          "chunks": 3,
+          "content_preview": "![image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAACAAAAAgACAIAAAA9xURnAAz8AGNhQlgADPwAanVtYgAAAB5qdW1kYzJwYQARABCAA",
+          "image_output_present": true,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 23,
+            "completion_tokens": 1002,
+            "total_tokens": 1002,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 23
+          },
+          "latency_seconds": 108.109
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 69,
+            "completion_tokens": 50,
+            "total_tokens": 119,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 69
+          },
+          "latency_seconds": 3.891
+        }
+      }
+    },
+    {
+      "model": "gemini-3-pro-preview",
+      "category": "pro",
+      "configured_role": "",
+      "verdict": "usable_limited",
+      "projectling_support": "planner_only",
+      "reasons": [
+        "text",
+        "sse",
+        "no_stable_tool_call"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 149,
+            "total_tokens": 156,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 4.672
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 5,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 92,
+            "total_tokens": 99,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 6.203
+        },
+        "tool": {
+          "ok": false,
+          "status": "limited",
+          "tool_call_count": 0,
+          "tool_names": [],
+          "arguments": [],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 48,
+            "completion_tokens": 130,
+            "total_tokens": 178,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 48
+          },
+          "latency_seconds": 6.906
+        }
+      }
+    },
+    {
+      "model": "gemini-3-pro-preview-thinking",
+      "category": "thinking",
+      "configured_role": "",
+      "verdict": "usable_limited",
+      "projectling_support": "limited",
+      "reasons": [
+        "text",
+        "sse",
+        "tool",
+        "specialized_thinking"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": true,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 86,
+            "total_tokens": 93,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 5.86
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 5,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 80,
+            "total_tokens": 87,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 8.406
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 48,
+            "completion_tokens": 139,
+            "total_tokens": 187,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 48
+          },
+          "latency_seconds": 7.859
+        },
+        "thinking": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "reasoning_present": true,
+          "reasoning_chars": 500,
+          "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 103,
+            "total_tokens": 115,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 12
+          },
+          "latency_seconds": 5.188
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-flash-image",
+      "category": "image",
+      "configured_role": "",
+      "verdict": "diagnostic_only",
+      "projectling_support": "unsupported",
+      "reasons": [
+        "text",
+        "sse",
+        "tool",
+        "specialized_image"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 3.328
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 5,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 2.125
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 69,
+            "completion_tokens": 16,
+            "total_tokens": 85,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 69
+          },
+          "latency_seconds": 2.469
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-flash-image-preview",
+      "category": "image",
+      "configured_role": "",
+      "verdict": "diagnostic_only",
+      "projectling_support": "unsupported",
+      "reasons": [
+        "tool",
+        "specialized_image"
+      ],
+      "probes": {
+        "text": {
+          "ok": false,
+          "status": "error",
+          "latency_seconds": 55.39,
+          "error_type": "DeepSeekAPIError",
+          "error": "network_timeout",
+          "http_status": null
+        },
+        "stream": {
+          "ok": false,
+          "status": "limited",
+          "chunks": 3,
+          "content_preview": "![image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAACAAAAAgACAIAAAA9xURnAAiPlWNhQlgACI+VanVtYgAAAB5qdW1kYzJwYQARABCAA",
+          "image_output_present": true,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 23,
+            "completion_tokens": 1104,
+            "total_tokens": 1104,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 23
+          },
+          "latency_seconds": 96.172
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 69,
+            "completion_tokens": 16,
+            "total_tokens": 85,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 69
+          },
+          "latency_seconds": 2.828
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-flash-lite",
+      "category": "lite",
+      "configured_role": "",
+      "verdict": "recommended",
+      "projectling_support": "stable",
+      "reasons": [
+        "text",
+        "sse",
+        "tool"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.766
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 5,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 1,
+            "total_tokens": 9,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 1.781
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 69,
+            "completion_tokens": 16,
+            "total_tokens": 85,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 69
+          },
+          "latency_seconds": 2.719
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-pro-high",
+      "category": "pro",
+      "configured_role": "",
+      "verdict": "unavailable",
+      "projectling_support": "unsupported",
+      "reasons": [
+        "all_probes_failed"
+      ],
+      "probes": {
+        "text": {
+          "ok": false,
+          "status": "error",
+          "latency_seconds": 3.265,
+          "error_type": "DeepSeekAPIError",
+          "error": "channel_circuit_open",
+          "http_status": 503
+        },
+        "stream": {
+          "ok": false,
+          "status": "error",
+          "latency_seconds": 0.61,
+          "error_type": "DeepSeekAPIError",
+          "error": "channel_circuit_open",
+          "http_status": 503
+        },
+        "tool": {
+          "ok": false,
+          "status": "error",
+          "latency_seconds": 0.656,
+          "error_type": "DeepSeekAPIError",
+          "error": "channel_circuit_open",
+          "http_status": 503
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-pro-low",
+      "category": "pro",
+      "configured_role": "",
+      "verdict": "recommended",
+      "projectling_support": "stable",
+      "reasons": [
+        "text",
+        "sse",
+        "tool"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 191,
+            "completion_tokens": 145,
+            "total_tokens": 336,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 191
+          },
+          "latency_seconds": 3.578
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 5,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 152,
+            "completion_tokens": 1,
+            "total_tokens": 153,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 152
+          },
+          "latency_seconds": 2.531
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 69,
+            "completion_tokens": 243,
+            "total_tokens": 312,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 69
+          },
+          "latency_seconds": 5.875
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-pro-preview",
+      "category": "pro",
+      "configured_role": "",
+      "verdict": "usable_limited",
+      "projectling_support": "planner_only",
+      "reasons": [
+        "text",
+        "sse",
+        "no_stable_tool_call"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": true,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 92,
+            "total_tokens": 99,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 7.641
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 6,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": true,
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 131,
+            "total_tokens": 138,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 13.375
+        },
+        "tool": {
+          "ok": false,
+          "status": "error",
+          "latency_seconds": 55.375,
+          "error_type": "DeepSeekAPIError",
+          "error": "network_timeout",
+          "http_status": null
+        }
+      }
+    },
+    {
+      "model": "gemini-3.1-pro-preview-thinking",
+      "category": "thinking",
+      "configured_role": "",
+      "verdict": "usable_limited",
+      "projectling_support": "limited",
+      "reasons": [
+        "text",
+        "sse",
+        "tool",
+        "specialized_thinking"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": true,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 75,
+            "total_tokens": 82,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 6.156
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 5,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 7,
+            "completion_tokens": 86,
+            "total_tokens": 93,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 7
+          },
+          "latency_seconds": 5.766
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 48,
+            "completion_tokens": 503,
+            "total_tokens": 551,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 48
+          },
+          "latency_seconds": 8.453
+        },
+        "thinking": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "reasoning_present": true,
+          "reasoning_chars": 500,
+          "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 103,
+            "total_tokens": 115,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 12
+          },
+          "latency_seconds": 5.266
+        }
+      }
+    },
+    {
+      "model": "gemini-3.5-flash-extra-low",
+      "category": "flash",
+      "configured_role": "",
+      "verdict": "recommended",
+      "projectling_support": "stable",
+      "reasons": [
+        "text",
+        "sse",
+        "tool"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 8,
+            "completion_tokens": 102,
+            "total_tokens": 110,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 8
+          },
+          "latency_seconds": 2.031
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 5,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 109,
+            "completion_tokens": 1,
+            "total_tokens": 110,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 109
+          },
+          "latency_seconds": 1.609
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 69,
+            "completion_tokens": 87,
+            "total_tokens": 156,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 69
+          },
+          "latency_seconds": 2.985
+        }
+      }
+    },
+    {
+      "model": "gemini-3.5-flash-low",
+      "category": "flash",
+      "configured_role": "planner",
+      "verdict": "recommended",
+      "projectling_support": "stable",
+      "reasons": [
+        "text",
+        "sse",
+        "tool",
+        "configured_planner"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 66,
+            "completion_tokens": 48,
+            "total_tokens": 114,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 66
+          },
+          "latency_seconds": 1.984
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 5,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 55,
+            "completion_tokens": 1,
+            "total_tokens": 56,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 55
+          },
+          "latency_seconds": 1.781
+        },
+        "tool": {
+          "ok": true,
+          "status": "ok",
+          "tool_call_count": 1,
+          "tool_names": [
+            "matrix_ping"
+          ],
+          "arguments": [
+            "{\"value\":\"pong\"}"
+          ],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 69,
+            "completion_tokens": 56,
+            "total_tokens": 125,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 69
+          },
+          "latency_seconds": 1.782
+        }
+      }
+    },
+    {
+      "model": "gemini-pro-agent",
+      "category": "agent",
+      "configured_role": "",
+      "verdict": "diagnostic_only",
+      "projectling_support": "unsupported",
+      "reasons": [
+        "text",
+        "sse",
+        "specialized_agent"
+      ],
+      "probes": {
+        "text": {
+          "ok": true,
+          "status": "ok",
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 220,
+            "completion_tokens": 92,
+            "total_tokens": 312,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 220
+          },
+          "latency_seconds": 2.921
+        },
+        "stream": {
+          "ok": true,
+          "status": "ok",
+          "chunks": 5,
+          "content_preview": "pong",
+          "image_output_present": false,
+          "reasoning_present": false,
+          "usage": {
+            "prompt_tokens": 99,
+            "completion_tokens": 92,
+            "total_tokens": 191,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 99
+          },
+          "latency_seconds": 3.047
+        },
+        "tool": {
+          "ok": false,
+          "status": "limited",
+          "tool_call_count": 0,
+          "tool_names": [],
+          "arguments": [],
+          "content_preview": "",
+          "usage": {
+            "prompt_tokens": 69,
+            "completion_tokens": 213,
+            "total_tokens": 282,
+            "cached_tokens": 0,
+            "cache_miss_tokens": 69
+          },
+          "latency_seconds": 6.969
+        }
+      }
+    }
+  ]
+}
