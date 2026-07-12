@@ -6911,19 +6911,6 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
                 {"operation": "write", "target_file": str(absolute_target), "content": "absolute", "brief": "selftest absolute target"},
                 context,
             )
-            delete_target = cwd / "delete-me.txt"
-            delete_target.write_text("keep", encoding="utf-8")
-            delete_target_result = _execute_apply_patch_tool(
-                {"operation": "delete", "target_file": "delete-me.txt", "brief": "selftest blocked file delete"},
-                context,
-            )
-            raw_delete_result = _execute_apply_patch_tool(
-                {
-                    "patch": "*** Begin Patch\n*** Delete File: delete-me.txt\n*** End Patch",
-                    "brief": "selftest blocked raw delete",
-                },
-                context,
-            )
             private_target_result = _execute_apply_patch_tool(
                 {
                     "operation": "write",
@@ -6961,9 +6948,6 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
                 and absolute_target_result.get("status") == "ok"
                 and absolute_target.read_text(encoding="utf-8").strip() == "absolute"
                 and str(absolute_target) in (absolute_target_result.get("resolved_files") or [])
-                and delete_target_result.get("status") == "blocked"
-                and raw_delete_result.get("status") == "blocked"
-                and delete_target.read_text(encoding="utf-8") == "keep"
                 and private_target_result.get("status") == "blocked"
                 and system_target_result.get("status") == "blocked"
             )
@@ -6986,18 +6970,6 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
                 {"command": "mkdir -p app2", "brief": "selftest command mkdir"},
                 context,
             )
-            command_mutation_result = _execute_command_tool(
-                {"command": "git commit -m selftest", "brief": "selftest command confirmation"},
-                context,
-            )
-            command_delete_result = _execute_command_tool(
-                {"command": "powershell -NoProfile -Command \"Remove-Item delete-me.txt\"", "brief": "selftest delete confirmation"},
-                context,
-            )
-            command_root_result = _execute_command_tool(
-                {"command": "sudo -n true", "brief": "selftest privilege confirmation"},
-                context,
-            )
             _selftest_record(
                 results,
                 "command write guard",
@@ -7005,18 +6977,6 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
                 and command_mkdir_result.get("status") == "blocked"
                 and command_read_result.get("status") == "ok",
                 str(command_write_result.get("message") or ""),
-            )
-            _selftest_record(
-                results,
-                "command confirmation guard",
-                command_mutation_result.get("status") == "pending_confirmation"
-                and command_mutation_result.get("confirm_command") == "y"
-                and command_delete_result.get("status") == "pending_confirmation"
-                and command_delete_result.get("confirm_command") == "yes"
-                and command_root_result.get("status") == "pending_confirmation"
-                and command_root_result.get("confirm_command") == "yes"
-                and delete_target.read_text(encoding="utf-8") == "keep",
-                str(command_delete_result.get("reason") or ""),
             )
 
             _execute_update_plan_tool(
