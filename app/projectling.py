@@ -5023,7 +5023,7 @@ class ProjectLingEngine:
         guidance = [
             "上一条工具结果失败或被阻断，不能把对应计划步骤标记为 done，也不能在最终回复里声称已完成验证。",
             "先根据 stdout/stderr/message 定位原因；如果原因明确，可最小修复后重试，否则用 link.action=blocked 交回主角色/用户判断。",
-            "文件创建、改写、搬移、删除都继续使用 apply_patch；不要改用 command/cat/tee/heredoc/python/mkdir/cp/rm 作为写文件回退。",
+            "文件创建、改写和搬移继续使用 apply_patch；整文件删除必须通过 command 发起并等待用户输入 yes，不得静默删除。",
         ]
         if channel == "ADB" or str(payload.get("command") or "").strip().startswith("adb"):
             guidance.append("ADB 启动或 input 失败不等于功能验证通过；最多只能报告包安装/启动烟测结果。")
@@ -5087,7 +5087,7 @@ class ProjectLingEngine:
         review_user_prompt = _prompt_block(
             f"""
             复审硬规则：
-            - 不要建议用 command/cat/tee/heredoc/python/sed/mkdir/cp/rm 写入、搬移或删除项目文件；apply_patch 失败时，要求读取目标片段并用更小的 apply_patch 重试。
+            - 不要建议用 command/cat/tee/heredoc/python/sed/mkdir/cp 写入或搬移项目文件；整文件删除必须通过 command 等待用户输入 yes，其他 apply_patch 失败时读取目标片段并用更小补丁重试。
             - 如果最近工具状态是 error/blocked/timeout，不得允许 Executor 把对应步骤标记为 done；必须先解释失败原因、最小修复并重试，或 link.action=blocked。
             - ADB input/启动失败不等于功能验证通过；最多算安装/启动烟测，不能声称新建/编辑/删除/持久化都验证成功。
             - 如果构建脚本需要卸载重装才能安装，最终回复必须说明签名冲突或安装方式，不要说“直接重新编译即可”。
@@ -6566,7 +6566,7 @@ class ProjectLingEngine:
             本地工具协议：
             - command：一次性 shell / adb / termux-api 命令；需要真实执行时直接调用工具，不写伪命令。
             - terminal：长时间、交互式或需要人工协作的终端任务；结束后用 stop/close 关闭 tmux 会话。
-            - apply_patch：代码修改；优先使用 DeepSeek 结构化字段，不要优先手写 diff。创建/整文件替换用 operation=write + target_file + content；小范围精确替换用 operation=replace + target_file + find + replace；追加/插入用 append/prepend/insert_before/insert_after；多个小改动用 edits[]。只有必须依赖精确上下文时才用 patch/diff。
+            - apply_patch：代码修改；优先使用 DeepSeek 结构化字段，不要优先手写 diff。创建/整文件替换用 operation=write + target_file + content；小范围精确替换用 operation=replace + target_file + find + replace；追加/插入用 append/prepend/insert_before/insert_after；delete 只用于带 find 的文本删除。整文件删除必须通过 command 等待用户输入 yes。只有必须依赖精确上下文时才用 patch/diff。
             - web_search：查询当前外部资料。
             - context：设置下一轮当前角色上下文可见度，只改预算，不改文件内容。
             - contextmanage：新上下文治理入口，按 entries id 做 status/list/replace/fold；旧 full/half/fold_tools 不再使用。

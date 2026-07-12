@@ -3760,6 +3760,17 @@ def _has_structured_patch_operation(text: str) -> bool:
     )
 
 
+def _patch_requests_file_removal(patch_text: str) -> bool:
+    text = str(patch_text or "").replace("\r\n", "\n").replace("\r", "\n")
+    return bool(
+        re.search(r"(?m)^\*\*\* Delete File:\s+\S+", text)
+        or re.search(r"(?m)^\*\*\* Move to:\s+\S+", text)
+        or re.search(r"(?m)^\+\+\+\s+/dev/null(?:\s|$)", text)
+        or re.search(r"(?m)^deleted file mode\s+", text)
+        or re.search(r"(?m)^rename from\s+", text)
+    )
+
+
 def _ensure_structured_patch_wrapper(text: str, notes: list[str]) -> str:
     value = str(text or "").strip()
     if not value or "*** Begin Patch" in value:
@@ -4370,6 +4381,18 @@ def _execute_deepseek_structured_apply_patch(
                 "cwd": str(cwd),
                 "message": f"结构化编辑 {op} 缺少 target_file。",
             }
+        if op == "delete":
+            has_find, _ = _deepseek_edit_text(spec, "find", "old_text", "content")
+            if not has_find:
+                return {
+                    "status": "blocked",
+                    "tool": "apply_patch",
+                    "brief": brief,
+                    "cwd": str(cwd),
+                    "message": "整文件删除不能由模型补丁直接执行；请改用 command 发起删除并等待用户输入 yes。",
+                    "changed_files": [target],
+                    "mode_used": "deepseek-structured-delete-blocked",
+                }
         if target not in changed_paths:
             changed_paths.append(target)
 
@@ -5331,8 +5354,32 @@ def _command_direct_filesystem_mutation_reason(tokens: list[str]) -> str:
         return f"检测到 {first} 直接创建文件/目录；创建项目文件请使用 apply_patch，它会自动创建父目录。"
     if first in {"cp", "mv", "ln", "install"}:
         return f"检测到 {first} 直接搬移或安装文件；项目文件变更请使用 apply_patch，避免路径漂移。"
-    if first in {"rm", "rmdir"}:
-        return f"检测到 {first} 删除文件/目录；删除项目文件请使用 apply_patch.operation=delete 或先交回用户确认。"
+    return ""
+
+
+def _command_delete_primitive_reason(command: str) -> str:
+    lowered = f" {str(command or '').strip().lower()} "
+    markers = (
+        "os.remove(",
+        "os.unlink(",
+        "shutil.rmtree(",
+        ".unlink(",
+        " file.delete(",
+        " directory.delete(",
+        "::delete(",
+    )
+    if re.search(r"\b(?:remove-item|clear-content)\b", lowered) or any(marker in lowered for marker in markers):
+        return "检测到文件或目录删除操作，需要输入 yes 才能执行。"
+    if re.search(r"(?:^|[\s;&|\"'])(?:rm|rmdir|del|erase|rd)(?:\s|$)", lowered):
+        return "检测到文件或目录删除命令，需要输入 yes 才能执行。"
+    return ""
+
+
+def _command_privilege_escalation_reason(command: str, tokens: list[str]) -> str:
+    first = tokens[0].lower() if tokens else ""
+    lowered = str(command or "").lower()
+    if first in {"sudo", "su", "runas"} or "-verb runas" in lowered:
+        return "检测到管理员或 root 权限请求，需要输入 yes 才能执行。"
     return ""
 
 
@@ -5421,6 +5468,16 @@ def _execute_apply_patch_tool(args: dict[str, Any], context: ToolContext) -> dic
             "tool": "apply_patch",
             "brief": brief,
             "message": f"patch 太大：{len(raw_patch_text)} chars，超过 {MAX_PATCH_CHARS}。",
+        }
+    if _patch_requests_file_removal(raw_patch_text):
+        return {
+            "status": "blocked",
+            "tool": "apply_patch",
+            "brief": brief,
+            "cwd": str(cwd),
+            "message": "整文件删除或移动不能由模型补丁直接执行；请改用 command 发起操作并等待用户输入 yes。",
+            "changed_files": _patch_changed_paths(raw_patch_text),
+            "patch": raw_patch_text,
         }
     raw_changed_paths = _patch_changed_paths(raw_patch_text)
     raw_valid, raw_reason = _validate_patch_paths(raw_changed_paths, cwd=cwd)
@@ -6276,7 +6333,7 @@ def _analyze_android_remote(tokens: list[str]) -> CommandDecision:
     if first in {"am", "cmd", "input", "setprop", "svc"}:
         return CommandDecision("confirm", "medium", "adb shell 将改动设备状态，需确认执行。")
     if first in {"reboot", "stop", "start"}:
-        return CommandDecision("confirm", "high", "adb shell 包含高风险设备操作，需确认执行。")
+        return CommandDecision("confirm", "high", "adb shell 包含高风险设备操作，需确认执行。", confirm_command="yes")
     if first in low_risk:
         return CommandDecision("execute", "low", "ADB 远端只读命令。")
     return CommandDecision("confirm", "medium", "ADB 远端命令不在只读白名单内，需确认执行。")
@@ -6306,7 +6363,7 @@ def _analyze_adb_command(tokens: list[str]) -> CommandDecision:
         return CommandDecision("confirm", "medium", f"adb {subcommand} 将改动连接或设备状态，需确认执行。")
 
     if subcommand in {"reboot", "root", "unroot", "disable-verity", "enable-verity"}:
-        return CommandDecision("confirm", "high", f"adb {subcommand} 属于高风险设备操作，需确认执行。")
+        return CommandDecision("confirm", "high", f"adb {subcommand} 属于高风险设备操作，需确认执行。", confirm_command="yes")
 
     return CommandDecision("confirm", "medium", "ADB 子命令未归类为只读，需确认执行。")
 
@@ -6520,12 +6577,22 @@ def _analyze_command(command: str, context: ToolContext) -> CommandDecision:
     if not tokens:
         return CommandDecision("blocked", "low", "命令为空。")
 
+    lowered = stripped.lower()
+
     direct_write_reason = _command_direct_file_write_reason(stripped)
     if direct_write_reason:
         return CommandDecision("blocked", "high", direct_write_reason)
     filesystem_mutation_reason = _command_direct_filesystem_mutation_reason(tokens)
     if filesystem_mutation_reason:
         return CommandDecision("blocked", "medium", filesystem_mutation_reason)
+
+    delete_reason = _command_delete_primitive_reason(stripped)
+    if delete_reason:
+        return CommandDecision("confirm", "high", delete_reason, confirm_command="yes")
+
+    privilege_reason = _command_privilege_escalation_reason(stripped, tokens)
+    if privilege_reason:
+        return CommandDecision("confirm", "high", privilege_reason, confirm_command="yes")
 
     if shell_flags.has_command_substitution:
         return CommandDecision("confirm", "medium", "检测到命令替换或多行 shell 结构，需确认执行。")
@@ -6543,7 +6610,6 @@ def _analyze_command(command: str, context: ToolContext) -> CommandDecision:
         return CommandDecision("confirm", "medium", "检测到后台脱离式执行，需确认执行。")
 
     first_word = tokens[0]
-    lowered = stripped.lower()
     catastrophic_reason = _catastrophic_command_reason(tokens, lowered)
     if catastrophic_reason:
         return CommandDecision("confirm", "high", catastrophic_reason, confirm_command="yes")
@@ -6905,7 +6971,7 @@ def _execute_command_tool(args: dict[str, Any], context: ToolContext) -> dict[st
             "message": reason,
         }
 
-    if decision.action == "confirm" and (decision.confirm_command or "y") == "yes":
+    if decision.action == "confirm":
         pending = _build_pending_payload(
             command=raw_command,
             cwd=context.cwd,
@@ -7601,9 +7667,9 @@ class ToolRegistry:
                 description=(
                     "Run one local shell command in the current Termux working directory. "
                     "Supports shell commands, adb TCP workflows, and termux-api commands. "
-                    "Commands usually run immediately and return bounded stdout/stderr. "
-                    "Clearly catastrophic commands create a pending confirmation and require "
-                    "the human to type yes before execution; blocked commands are not executed."
+                    "Read-only commands run immediately and return bounded stdout/stderr. "
+                    "Commands that may change files, devices, repositories, or privileges create a pending "
+                    "human confirmation; deletion and privilege escalation require typing yes."
                 ),
                 input_schema={
                     "type": "object",
@@ -7827,7 +7893,8 @@ class ToolRegistry:
                     "structured form: operation + target_file + content/find/replace, or edits[] for "
                     "multiple small operations. Use operation=write for full-file create/replace, "
                     "operation=replace for exact text replacement, append/prepend/insert_before/"
-                    "insert_after for simple insertions, and delete for text or file deletion. Unified "
+                    "insert_after for simple insertions, and delete with find for exact text removal. Whole-file "
+                    "deletion or move is blocked here and must go through command plus human yes confirmation. Unified "
                     "diff and *** Begin Patch remain available for advanced exact-context patches. "
                     "Use this for code edits instead of shell heredocs, python writes, sed -i, tee, "
                     "or ad-hoc file rewriting."
@@ -7838,7 +7905,7 @@ class ToolRegistry:
                         "operation": {
                             "type": "string",
                             "enum": ["write", "replace", "append", "prepend", "insert_after", "insert_before", "delete", "patch"],
-                            "description": "Preferred DeepSeek-safe edit operation. write creates/replaces a full file; replace changes exact find text; delete removes find text or deletes the file when find is omitted; patch falls back to patch/diff text.",
+                            "description": "Preferred DeepSeek-safe edit operation. write creates/replaces a full file; replace changes exact find text; delete removes exact find text. Whole-file deletion or move is blocked and must use command with human yes confirmation; patch falls back to patch/diff text.",
                         },
                         "patch": {
                             "type": "string",
