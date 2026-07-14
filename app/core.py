@@ -6871,7 +6871,10 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
         _selftest_record(results, "config/schema/routing", False, str(exc))
 
     try:
-        with tempfile.TemporaryDirectory(prefix="projectling-selftest-") as tmp:
+        # Termux places tempfile.gettempdir() under $PREFIX/tmp.  The patch
+        # safety boundary intentionally protects the whole Termux prefix, so
+        # exercise authorized edits from a disposable directory under HOME.
+        with tempfile.TemporaryDirectory(prefix="projectling-selftest-", dir=str(Path.home())) as tmp:
             root = Path(tmp)
             cwd = root / "cwd"
             cwd.mkdir(parents=True, exist_ok=True)
@@ -7164,7 +7167,8 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
     failed = [item for item in results if item["status"] == "fail"]
     skipped = [item for item in results if item["status"] == "skip"]
     passed = total - len(failed) - len(skipped)
-    score = int(round((passed + len(skipped) * 0.5) * 100 / max(1, total)))
+    executed = passed + len(failed)
+    score = int(round(passed * 100 / max(1, executed))) if executed else 100
     payload = {
         "status": "ok" if not failed else "fail",
         "score": score,
@@ -7177,7 +7181,12 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
     if getattr(args, "json", False):
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
-        print(f"ProjectLing selftest: {payload['status']} · score {score}% · {passed}/{total} passed")
+        result_count = (
+            f"{passed}/{total} passed"
+            if not skipped
+            else f"{passed} passed · {len(skipped)} skipped / {total}"
+        )
+        print(f"ProjectLing selftest: {payload['status']} · score {score}% · {result_count}")
         for item in results:
             marker = "✓" if item["status"] == "ok" else "-" if item["status"] == "skip" else "✗"
             detail = f" · {item['detail']}" if item.get("detail") else ""

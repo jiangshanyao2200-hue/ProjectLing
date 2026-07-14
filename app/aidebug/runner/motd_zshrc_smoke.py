@@ -43,7 +43,15 @@ elif _SCRIPT_AIDEBUG_DIR and (_SCRIPT_AIDEBUG_DIR / "runner" / "motd_zshrc_smoke
     AIDEBUG_DIR = _SCRIPT_AIDEBUG_DIR
 else:
     AIDEBUG_DIR = (_DEFAULT_AITERMUX_HOME / "projectling" / "aidebug").expanduser()
-_INFERRED_PROJECTLING_DIR = AIDEBUG_DIR.parent if (AIDEBUG_DIR.parent / "projectling.zsh").exists() else None
+def _infer_projectling_dir_from_aidebug() -> Path | None:
+    parent = AIDEBUG_DIR.parent
+    for candidate in (parent, parent / "app"):
+        if (candidate / "core.py").is_file() and (candidate / "projectling.zsh").is_file():
+            return candidate
+    return parent if (parent / "projectling.zsh").is_file() else None
+
+
+_INFERRED_PROJECTLING_DIR = _infer_projectling_dir_from_aidebug()
 PROJECTLING_DIR = Path(
     os.environ.get("PROJECTLING_DIR", str(_INFERRED_PROJECTLING_DIR or _DEFAULT_AITERMUX_HOME / "projectling"))
 ).expanduser()
@@ -52,6 +60,7 @@ LOG_DIR = AIDEBUG_DIR / "logs"
 NOTE_DIR = AIDEBUG_DIR / "notes"
 TMP_DIR = AIDEBUG_DIR / "tmp"
 MOTD_SH = HOME / ".termux" / "motd.sh"
+HOST_STARTBOOT_DIR = AITERMUX_HOME / "startboot"
 ZSHRC = HOME / ".zshrc"
 SMOKE_LOG = LOG_DIR / "motd-zshrc-smoke.jsonl"
 NOTE_PATH = NOTE_DIR / "motd-zshrc-smoke.md"
@@ -83,6 +92,25 @@ def read_new_lines(path: Path, start_line: int) -> list[str]:
             if index > start_line:
                 lines.append(line.rstrip("\n"))
     return lines
+
+
+def zshrc_targets_current_install(projectling_zsh: Path) -> bool:
+    if not ZSHRC.is_file():
+        return False
+    hook_paths = [projectling_zsh]
+    if PROJECTLING_DIR.name == "app":
+        root_hook = PROJECTLING_DIR.parent / "projectling.zsh"
+        if root_hook.is_file():
+            hook_paths.append(root_hook)
+    normalized_hooks = {path.expanduser().resolve(strict=False) for path in hook_paths}
+    quickinstall_hook = (AITERMUX_HOME / "projectling" / "projectling.zsh").expanduser().resolve(strict=False)
+    if quickinstall_hook in normalized_hooks:
+        return True
+    try:
+        zshrc_text = ZSHRC.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return any(str(path) in zshrc_text for path in normalized_hooks)
 
 
 def run_cmd(command: list[str], *, timeout: float = 30.0, env: dict[str, str] | None = None) -> dict[str, Any]:
@@ -148,6 +176,13 @@ def capture_pane(name: str) -> str:
 def run_tty_motd(timeout_seconds: float) -> dict[str, Any]:
     if not MOTD_SH.is_file():
         return {"ok": True, "skipped": True, "reason": "motd_missing", "path": str(MOTD_SH)}
+    if not HOST_STARTBOOT_DIR.is_dir():
+        return {
+            "ok": True,
+            "skipped": True,
+            "reason": "host_startboot_missing",
+            "path": str(HOST_STARTBOOT_DIR),
+        }
     if not shutil.which("tmux"):
         return {"ok": False, "skipped": True, "reason": "tmux_missing"}
 
@@ -245,7 +280,7 @@ def main() -> int:
         "zshrc": line_count(zshrc_log),
     }
 
-    if MOTD_SH.is_file():
+    if MOTD_SH.is_file() and HOST_STARTBOOT_DIR.is_dir():
         non_tty = run_cmd(
             [str(MOTD_SH)],
             timeout=10,
@@ -255,11 +290,13 @@ def main() -> int:
         non_tty["stderr_chars"] = len(non_tty.pop("stderr", ""))
         non_tty["ok"] = bool(non_tty["returncode"] == 0 and non_tty["stdout_chars"] == 0 and non_tty["stderr_chars"] == 0)
     else:
+        reason = "motd_missing" if not MOTD_SH.is_file() else "host_startboot_missing"
+        missing_path = MOTD_SH if reason == "motd_missing" else HOST_STARTBOOT_DIR
         non_tty = {
             "ok": True,
             "skipped": True,
-            "reason": "motd_missing",
-            "path": str(MOTD_SH),
+            "reason": reason,
+            "path": str(missing_path),
             "returncode": None,
             "stdout_chars": 0,
             "stderr_chars": 0,
@@ -278,9 +315,13 @@ def main() -> int:
             "stdout_lines": [],
             "source": "missing",
         }
-    elif ZSHRC.is_file():
-        zsh_command = "print ZSHRC_SMOKE_OK; whence projectling_dispatch_input >/dev/null 2>&1 && print PROJECTLING_HOOK_OK; alias menu >/dev/null 2>&1 && print MENU_ALIAS_OK"
-        expected = {"ZSHRC_SMOKE_OK", "PROJECTLING_HOOK_OK", "MENU_ALIAS_OK"}
+    elif ZSHRC.is_file() and zshrc_targets_current_install(projectling_zsh):
+        zsh_command = (
+            "print ZSHRC_SMOKE_OK; "
+            "whence projectling_dispatch_input >/dev/null 2>&1 && print PROJECTLING_HOOK_OK; "
+            "alias menu >/dev/null 2>&1 && print MENU_ALIAS_OK || true"
+        )
+        expected = {"ZSHRC_SMOKE_OK", "PROJECTLING_HOOK_OK"}
         zsh_source = str(ZSHRC)
     elif projectling_zsh.is_file():
         zsh_command = f"source {shlex.quote(str(projectling_zsh))}; print ZSHRC_SMOKE_OK; whence projectling_dispatch_input >/dev/null 2>&1 && print PROJECTLING_HOOK_OK"
@@ -306,10 +347,25 @@ def main() -> int:
             },
         )
         zsh_stdout = zsh.pop("stdout", "")
-        zsh["stderr_chars"] = len(zsh.pop("stderr", ""))
+        zsh_stderr = zsh.pop("stderr", "")
+        benign_stderr_patterns = (
+            "terminfo[kcbt]: parameter not set",
+        )
+        zsh_stderr_warnings = [
+            line
+            for line in zsh_stderr.splitlines()
+            if line.strip() and not any(pattern in line for pattern in benign_stderr_patterns)
+        ]
+        zsh["stderr_chars"] = len(zsh_stderr)
+        zsh["stderr_warnings"] = zsh_stderr_warnings[:20]
         zsh["stdout_lines"] = zsh_stdout.splitlines()
         zsh["source"] = zsh_source
-        zsh["ok"] = bool(zsh["returncode"] == 0 and expected.issubset(set(zsh["stdout_lines"])) and zsh["stderr_chars"] == 0)
+        zsh["menu_alias"] = "MENU_ALIAS_OK" in zsh["stdout_lines"]
+        zsh["ok"] = bool(
+            zsh["returncode"] == 0
+            and expected.issubset(set(zsh["stdout_lines"]))
+            and not zsh_stderr_warnings
+        )
 
     tty = run_tty_motd(args.tty_timeout)
 

@@ -2,7 +2,7 @@
 
 ## 放置位置
 
-建议解压到 `$HOME/ProjectLing`。Android 共享存储可能限制权限和符号链接，不建议直接在 `/sdcard` 或 `/storage/emulated/0` 中运行。
+建议解压到 `$HOME/PROJECTLing`。Android 共享存储可能限制权限和符号链接，不建议直接在 `/sdcard` 或 `/storage/emulated/0` 中运行。
 
 ## 环境
 
@@ -37,7 +37,9 @@ bash run.sh
 ```bash
 bash run.sh doctor
 bash run.sh selftest
-bash app/aidebug/bin/aidebug health --json
+bash app/aidebug/bin/aidebug termux --json
+bash app/aidebug/bin/aidebug verify-termux --profile local
+bash app/aidebug/bin/aidebug verify-termux --profile full
 ```
 
 升级时保留 `app/config/env`、`app/context/`、`app/memory/` 和需要保留的 AIDEBUG 状态，然后用新版本程序文件更新其余内容。

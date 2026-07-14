@@ -23,7 +23,9 @@ from urllib import error, parse, request
 # 保持单目录工程的同时，允许从不同 cwd 或外部入口稳定导入 sibling 模块。
 PROJECTLING_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECTLING_DIR))
-MODEL_REQUEST_AUDIT_LOG = PROJECTLING_DIR / "aidebug" / "logs" / "model-requests.jsonl"
+MODEL_REQUEST_AUDIT_LOG = Path(
+    os.environ.get("AITERMUX_AIDEBUG_DIR", str(PROJECTLING_DIR / "aidebug"))
+).expanduser() / "logs" / "model-requests.jsonl"
 _MODEL_REQUEST_AUDIT_LOCK = threading.Lock()
 
 from tooling import (

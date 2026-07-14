@@ -3,6 +3,7 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
   typeset _projectling_bridge_root="${_projectling_bridge_source:A:h}"
 
   export PROJECTLING_HOME="$_projectling_bridge_root/app"
+  export PROJECTLING_DIR="$PROJECTLING_HOME"
   export AITERMUX_HOME="${AITERMUX_HOME:-${_projectling_bridge_root:h}}"
   export AITERMUX_AIDEBUG_DIR="${AITERMUX_AIDEBUG_DIR:-$_projectling_bridge_root/aidebug}"
 
@@ -13,7 +14,7 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
   if [[ -f "$PROJECTLING_HOME/projectling.zsh" ]]; then
     source "$PROJECTLING_HOME/projectling.zsh"
   else
-    print -u2 -- "PROJECT凌 核心缺失：$PROJECTLING_HOME/projectling.zsh"
+    print -u2 -- "ProjectLing shared core missing: $PROJECTLING_HOME/projectling.zsh"
   fi
 
   unset _projectling_bridge_source _projectling_bridge_root

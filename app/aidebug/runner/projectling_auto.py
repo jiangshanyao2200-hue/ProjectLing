@@ -46,7 +46,15 @@ elif _SCRIPT_AIDEBUG_DIR and (_SCRIPT_AIDEBUG_DIR / "runner" / "projectling_auto
     AIDEBUG_DIR = _SCRIPT_AIDEBUG_DIR
 else:
     AIDEBUG_DIR = (_DEFAULT_AITERMUX_HOME / "projectling" / "aidebug").expanduser()
-_INFERRED_PROJECTLING_DIR = AIDEBUG_DIR.parent if (AIDEBUG_DIR.parent / "run.sh").exists() else None
+def _infer_projectling_dir_from_aidebug() -> Path | None:
+    parent = AIDEBUG_DIR.parent
+    for candidate in (parent, parent / "app"):
+        if (candidate / "core.py").is_file() and (candidate / "run.sh").is_file():
+            return candidate
+    return parent if (parent / "run.sh").is_file() else None
+
+
+_INFERRED_PROJECTLING_DIR = _infer_projectling_dir_from_aidebug()
 PROJECTLING_DIR = Path(
     os.environ.get("PROJECTLING_DIR", str(_INFERRED_PROJECTLING_DIR or _DEFAULT_AITERMUX_HOME / "projectling"))
 ).expanduser()

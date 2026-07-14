@@ -2,6 +2,16 @@
 
 `aidebug` is the shared runtime debug chain for AITermux shell integration.
 
+Termux verification:
+- `aidebug termux` - score Android/Termux local readiness without Windows-only evidence
+- `aidebug verify-termux --profile local` - deterministic installer/core/tool/terminal regression
+- `aidebug verify-termux --profile live` - add a real active-provider function-calling replay
+- `aidebug verify-termux --profile full` - add active-provider and WebSearch end-to-end replay
+
+`verify-termux` also compares redacted runtime-state fingerprints before and after the run. A passing
+report guarantees that config semantics, context, memory, and secret-presence metadata were not changed
+by the verification workflow.
+
 Scope:
 - `motd` startup and launcher stability
 - `zshrc` source stability
@@ -21,6 +31,8 @@ Layout:
 - `logs/aidebug-health.json` - latest chain health report
 - `logs/aidebug-health.jsonl` - historical chain health reports
 - `logs/aidebug-windows.json` - latest Windows adapter and CLI text layout report
+- `logs/aidebug-termux.json` - latest Android Termux health report
+- `logs/termux-verification.json` - latest local/live/full Termux verification report
 - `logs/ui-screenshot-*.png` - optional Windows UI screenshots captured by `aidebug windows --screenshot`
 - `projectling/terminal output/` - projectling collaborative terminal logs
 - `legacy/` - old logs moved from previous scattered locations
@@ -33,6 +45,8 @@ Commands:
 - `aidebug motd-zshrc-smoke` - run non-TTY motd, zshrc hook, and PTY launcher smoke tests
 - `aidebug projectling-auto` - run the Project Ling toolchain regression loop
 - `aidebug health` - score each debug/runtime chain and write `notes/aidebug-health.md`
+- `aidebug termux` - run the platform-aware Android Termux health profile
+- `aidebug verify-termux --profile local|live|full` - run the complete Termux verification matrix
 - `../run.sh cleanup` - force runtime housekeeping for ProjectLing temp archives and bounded logs
 - `../run.sh cleanup --deep` - additionally remove Python bytecode caches when storage cleanup matters more than startup speed
 

@@ -3710,7 +3710,27 @@ def _patch_target_safety_reason(target: Path) -> str:
             if value:
                 system_roots.append(Path(value).expanduser().resolve(strict=False))
     else:
-        system_roots.extend(Path(value) for value in ("/boot", "/dev", "/etc", "/proc", "/run", "/sys", "/usr"))
+        posix_system_roots = [
+            "/boot",
+            "/dev",
+            "/etc",
+            "/proc",
+            "/run",
+            "/sys",
+            "/usr",
+            "/system",
+            "/vendor",
+            "/product",
+            "/odm",
+            "/apex",
+        ]
+        prefix = str(os.environ.get("PREFIX") or "").strip()
+        if prefix:
+            posix_system_roots.append(prefix)
+        for value in posix_system_roots:
+            root = Path(value).expanduser().resolve(strict=False)
+            if root not in system_roots:
+                system_roots.append(root)
     for root in system_roots:
         if resolved == root or _path_is_within(resolved, root):
             return f"目标位于受保护系统目录 {root}"

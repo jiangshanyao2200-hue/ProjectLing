@@ -13,6 +13,8 @@
 ```text
 PROJECTLing-Combined/
 ├─ PROJECT凌.exe
+├─ run.sh
+├─ projectling.zsh
 ├─ README.md
 ├─ app/
 ├─ Windows/
@@ -44,3 +46,4 @@ PROJECTLing-Termux/
 
 `app/config/env` 只在用户首次设置或 Termux 初始化时创建，不进入公开发行包。
 
+构建器兼容开发目录中的 `PROJECT LING.exe` 和仓库快照中的 `PROJECT凌.exe`，所有发行包统一输出为 `PROJECT凌.exe`。公开发布目标保持 `PROJECTling`，私有完整状态目标为 `ProjectLing-Private`。

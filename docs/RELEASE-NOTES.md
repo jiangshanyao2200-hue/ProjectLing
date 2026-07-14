@@ -9,6 +9,9 @@
 - Windows 宽度矩阵：16、20、24、32、40、48、80、120 全部通过。
 - Windows 输入编辑：首字符 Backspace、Delete、光标中部删除与边界条件全部通过。
 - Termux：Bash/Zsh 语法、安装检查、doctor、单独版入口和合并版 wrapper 全部通过。
+- 真实 Android Termux core selftest：39 / 39，100%。
+- Termux AIDEBUG health：43 checks，100 / 100。
+- Termux local/full verification：安装、双星 function-calling、WebSearch、terminal、MOTD/Zsh、memory/context 与 runtime-state guard 全部通过。
 
 ## 版本
 
@@ -42,6 +45,13 @@ bash run.sh
 
 安装脚本默认不联网安装依赖。它只检查环境、初始化本地 `app/config/env`、设置执行权限并幂等接入 zsh。
 
+完整验证：
+
+```bash
+bash app/aidebug/bin/aidebug verify-termux --profile local
+bash app/aidebug/bin/aidebug verify-termux --profile full
+```
+
 ## 模型与参数
 
 - 当前渠道暴露 23 个模型：6 recommended、10 usable_limited、5 diagnostic_only、1 incompatible、1 unavailable。
@@ -69,4 +79,3 @@ bash run.sh
 2. 重新使用旧版本完整目录，不要只替换 EXE。
 3. 不要用空白配置覆盖旧 `config/env`、context 或 memory。
 4. 保留脱敏诊断报告，不公开 API Key 或原始上游错误正文。
-

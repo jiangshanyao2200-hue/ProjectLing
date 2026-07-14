@@ -9,8 +9,20 @@ import sys
 from typing import Any
 
 
-PROJECTLING_DIR = Path(__file__).resolve().parents[2]
-DEFAULT_OUTPUT_DIR = PROJECTLING_DIR / "aidebug" / "state" / "runtime-state"
+_SCRIPT_AIDEBUG_DIR = Path(__file__).resolve().parents[1]
+_SCRIPT_PROJECTLING_ROOT = _SCRIPT_AIDEBUG_DIR.parent
+if os.environ.get("PROJECTLING_DIR"):
+    PROJECTLING_DIR = Path(os.environ["PROJECTLING_DIR"]).expanduser()
+elif (_SCRIPT_PROJECTLING_ROOT / "core.py").is_file():
+    PROJECTLING_DIR = _SCRIPT_PROJECTLING_ROOT
+elif (_SCRIPT_PROJECTLING_ROOT / "app" / "core.py").is_file():
+    PROJECTLING_DIR = _SCRIPT_PROJECTLING_ROOT / "app"
+else:
+    PROJECTLING_DIR = _SCRIPT_PROJECTLING_ROOT
+AIDEBUG_DIR = Path(
+    os.environ.get("AITERMUX_AIDEBUG_DIR", str(_SCRIPT_AIDEBUG_DIR))
+).expanduser()
+DEFAULT_OUTPUT_DIR = AIDEBUG_DIR / "state" / "runtime-state"
 
 WATCHED_PATHS = (
     "config/env",

@@ -1,11 +1,15 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -euo pipefail
 
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+CANONICAL_INSTALL="$SCRIPT_DIR/../../Termux/install.sh"
+if [ -f "$SCRIPT_DIR/../../core.py" ] && [ -f "$CANONICAL_INSTALL" ]; then
+  exec bash "$CANONICAL_INSTALL" "$@"
+fi
 if [ -f "$SCRIPT_DIR/app/core.py" ]; then
   RELEASE_ROOT="$SCRIPT_DIR"
 elif [ -f "$SCRIPT_DIR/../app/core.py" ]; then
-  RELEASE_ROOT="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
+  RELEASE_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)"
 else
   echo "[PROJECT凌] 找不到 app/core.py，请保持发行目录结构不变。" >&2
   exit 2
@@ -36,7 +40,15 @@ if [ -n "$missing" ]; then
   exit 1
 fi
 
-python -m py_compile "$APP_DIR/core.py" "$APP_DIR/projectling.py" "$APP_DIR/tooling.py"
+python -B - "$APP_DIR" <<'PY'
+from pathlib import Path
+import sys
+
+app = Path(sys.argv[1])
+for name in ("__init__.py", "core.py", "projectling.py", "tooling.py"):
+    path = app / name
+    compile(path.read_bytes(), str(path), "exec")
+PY
 echo "[PROJECT凌] Python、zsh、tmux 与核心文件检查通过。"
 if [ "$CHECK_ONLY" -eq 1 ]; then
   exit 0

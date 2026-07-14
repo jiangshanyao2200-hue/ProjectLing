@@ -51,7 +51,21 @@ elif _SCRIPT_AIDEBUG_DIR and (_SCRIPT_AIDEBUG_DIR / "runner" / "aidebug_health.p
     AIDEBUG_DIR = _SCRIPT_AIDEBUG_DIR
 else:
     AIDEBUG_DIR = (_DEFAULT_AITERMUX_HOME / "projectling" / "aidebug").expanduser()
-_INFERRED_PROJECTLING_DIR = AIDEBUG_DIR.parent if (AIDEBUG_DIR.parent / "run.sh").exists() else None
+AIDEBUG_CODE_DIR = Path(
+    os.environ.get("AIDEBUG_CODE_DIR", str(_SCRIPT_AIDEBUG_DIR or AIDEBUG_DIR))
+).expanduser()
+if not (AIDEBUG_CODE_DIR / "runner").is_dir():
+    AIDEBUG_CODE_DIR = AIDEBUG_DIR
+def _infer_projectling_dir_from_aidebug() -> Path | None:
+    parent = AIDEBUG_DIR.parent
+    candidates = (parent, parent / "app")
+    for candidate in candidates:
+        if (candidate / "core.py").is_file() and (candidate / "run.sh").is_file():
+            return candidate
+    return parent if (parent / "run.sh").is_file() else None
+
+
+_INFERRED_PROJECTLING_DIR = _infer_projectling_dir_from_aidebug()
 PROJECTLING_DIR = Path(
     os.environ.get("PROJECTLING_DIR", str(_INFERRED_PROJECTLING_DIR or _DEFAULT_AITERMUX_HOME / "projectling"))
 ).expanduser()
@@ -62,7 +76,10 @@ PROJECTLING_RUN = PROJECTLING_DIR / "run.sh"
 HEALTH_JSON = LOG_DIR / "aidebug-health.json"
 HEALTH_JSONL = LOG_DIR / "aidebug-health.jsonl"
 WINDOWS_JSON = LOG_DIR / "aidebug-windows.json"
+TERMUX_JSON = LOG_DIR / "aidebug-termux.json"
+TERMUX_JSONL = LOG_DIR / "aidebug-termux.jsonl"
 HEALTH_MD = NOTE_DIR / "aidebug-health.md"
+TERMUX_MD = NOTE_DIR / "aidebug-termux.md"
 ANDROID_READINESS_MD = NOTE_DIR / "projectling-android-termux-readiness.md"
 NEXT_PLAN_MD = NOTE_DIR / "projectling-aidebug-next-plan.md"
 NEXT_PLAN_JSON = NOTE_DIR / "projectling-aidebug-next-plan.json"
@@ -122,6 +139,21 @@ def timestamp() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def _is_android_termux_runtime() -> bool:
+    prefix = str(os.environ.get("PREFIX") or "")
+    return bool(
+        prefix.startswith("/data/data/com.termux/")
+        and Path("/data/data/com.termux/files/usr/bin/bash").is_file()
+        and (shutil.which("am") or Path("/system/bin/am").is_file())
+    )
+
+
+def _projectling_release_root() -> Path:
+    if PROJECTLING_DIR.name == "app" and (PROJECTLING_DIR.parent / "Termux").is_dir():
+        return PROJECTLING_DIR.parent
+    return PROJECTLING_DIR
+
+
 def run_cmd(
     command: list[str],
     *,
@@ -132,6 +164,7 @@ def run_cmd(
     env = os.environ.copy()
     env["AITERMUX_HOME"] = str(AITERMUX_HOME)
     env["AITERMUX_AIDEBUG_DIR"] = str(AIDEBUG_DIR)
+    env["AIDEBUG_CODE_DIR"] = str(AIDEBUG_CODE_DIR)
     env["PROJECTLING_DIR"] = str(PROJECTLING_DIR)
     return subprocess.run(
         command,
@@ -2803,7 +2836,7 @@ def _check_windows_native_adapter() -> dict[str, Any]:
     checks.append(("python", bool(sys.executable and Path(sys.executable).exists()), sys.executable, 20))
     checks.append(("core_py", (PROJECTLING_DIR / "core.py").exists(), str(PROJECTLING_DIR / "core.py"), 20))
     checks.append(("projectling_py", (PROJECTLING_DIR / "projectling.py").exists(), str(PROJECTLING_DIR / "projectling.py"), 10))
-    checks.append(("aidebug_runner", (AIDEBUG_DIR / "runner" / "aidebug_health.py").exists(), str(AIDEBUG_DIR / "runner" / "aidebug_health.py"), 10))
+    checks.append(("aidebug_runner", (AIDEBUG_CODE_DIR / "runner" / "aidebug_health.py").exists(), str(AIDEBUG_CODE_DIR / "runner" / "aidebug_health.py"), 10))
     checks.append(("windows_launcher_source", launcher_source.exists(), str(launcher_source), 10))
     checks.append(("windows_launcher_exe", launcher_exe.exists(), str(launcher_exe), 10))
     launcher_fresh = bool(
@@ -3292,6 +3325,179 @@ def check_layout() -> dict[str, Any]:
         status_from_score(score),
         [f"missing={len(missing)}", *[f"missing {path}" for path in missing[:5]]],
         "创建缺失目录或检查 AITERMUX_HOME/AITERMUX_AIDEBUG_DIR。" if missing else "",
+    )
+
+
+def check_termux_runtime_contract() -> dict[str, Any]:
+    release_root = _projectling_release_root()
+    command_paths = {
+        name: shutil.which(name) or ("/system/bin/am" if name == "am" and Path("/system/bin/am").is_file() else "")
+        for name in ("bash", "python", "zsh", "tmux", "am")
+    }
+    required_files = {
+        "core": PROJECTLING_DIR / "core.py",
+        "run": PROJECTLING_RUN,
+        "zsh": PROJECTLING_DIR / "projectling.zsh",
+        "termux_install": release_root / "Termux" / "install.sh",
+        "termux_run": release_root / "Termux" / "run.sh",
+        "aidebug": AIDEBUG_CODE_DIR / "bin" / "aidebug",
+        "aidebug_health": AIDEBUG_CODE_DIR / "runner" / "aidebug_health.py",
+        "aidebug_auto": AIDEBUG_CODE_DIR / "runner" / "projectling_auto.py",
+        "termux_verify": AIDEBUG_CODE_DIR / "runner" / "termux_verify.py",
+    }
+    missing_commands = [name for name, path in command_paths.items() if not path]
+    missing_files = [name for name, path in required_files.items() if not path.is_file()]
+    runtime_ok = _is_android_termux_runtime()
+    score = 100
+    if not runtime_ok:
+        score -= 40
+    score -= len(missing_commands) * 12
+    score -= len(missing_files) * 10
+    score = max(0, score)
+    evidence = [
+        f"runtime={'android-termux' if runtime_ok else 'non-termux'}",
+        f"prefix={os.environ.get('PREFIX') or '-'}",
+        "commands=" + ",".join(f"{name}:{'ok' if path else 'missing'}" for name, path in command_paths.items()),
+        "files=" + ",".join(f"{name}:{'ok' if path.is_file() else 'missing'}" for name, path in required_files.items()),
+        f"layout={'unified-app' if PROJECTLING_DIR.name == 'app' else 'private-flat'}",
+    ]
+    return item(
+        "termux_runtime_contract",
+        score,
+        status_from_score(score),
+        evidence,
+        "安装缺失命令或恢复 Termux/、AIDEBUG 与核心入口。" if score < 85 else "",
+    )
+
+
+def check_termux_install_contract() -> dict[str, Any]:
+    installer = _projectling_release_root() / "Termux" / "install.sh"
+    if not installer.is_file():
+        return item(
+            "termux_install_contract",
+            0,
+            "fail",
+            [f"installer_missing={installer}"],
+            "恢复 Termux/install.sh。",
+        )
+    try:
+        completed = run_cmd(
+            ["bash", str(installer), "--check", "--no-zshrc"],
+            cwd=_projectling_release_root(),
+            timeout=90,
+        )
+    except Exception as exc:
+        return item(
+            "termux_install_contract",
+            0,
+            "fail",
+            [f"exception={type(exc).__name__}: {exc}"],
+            "修复 Termux 安装检查。",
+        )
+    output_lines = [line.strip() for line in (completed.stdout or "").splitlines() if line.strip()]
+    score = 100 if completed.returncode == 0 else 25
+    evidence = [
+        f"rc={completed.returncode}",
+        f"lines={len(output_lines)}",
+        f"last={output_lines[-1][:160] if output_lines else '-'}",
+        f"stderr_chars={len(completed.stderr or '')}",
+    ]
+    return item(
+        "termux_install_contract",
+        score,
+        status_from_score(score),
+        evidence,
+        "执行 bash Termux/install.sh --check --no-zshrc 查看失败项。" if score < 85 else "",
+    )
+
+
+def check_platform_source_parity() -> dict[str, Any]:
+    release_root = _projectling_release_root()
+    launcher = PROJECTLING_DIR / "windows-launcher" / "Program.cs"
+    if not launcher.is_file():
+        launcher = release_root / "app" / "windows-launcher" / "Program.cs"
+    termux_run = release_root / "Termux" / "run.sh"
+    build_script = release_root / "release" / "build.ps1"
+    github_build_script = release_root / "release" / "github" / "build.ps1"
+    publish_script = release_root / "release" / "github" / "publish.ps1"
+    launcher_text = _read_text_optional(launcher)
+    termux_text = _read_text_optional(termux_run)
+    build_text = _read_text_optional(build_script)
+    github_build_text = _read_text_optional(github_build_script)
+    publish_text = _read_text_optional(publish_script)
+    source_checkout = build_script.is_file()
+    duplicate_core = [
+        path.name
+        for path in (release_root / "Termux").glob("*.py")
+        if path.name in {"core.py", "projectling.py", "tooling.py"}
+    ]
+    checks = {
+        "windows_launcher_shared_core": all(
+            marker in launcher_text for marker in ("ResolveProjectRoot", "appCandidate", '"core.py"')
+        ),
+        "termux_shared_app_dir": all(
+            marker in termux_text for marker in ("APP_DIR", 'exec bash "$APP_DIR/run.sh"')
+        ),
+        "no_termux_core_fork": not duplicate_core,
+        "release_single_source": (
+            all(marker in build_text for marker in ("'core.py'", "'projectling.py'", "'tooling.py'", "Copy-App"))
+            if source_checkout
+            else all((PROJECTLING_DIR / name).is_file() for name in ("core.py", "projectling.py", "tooling.py"))
+        ),
+        "launcher_filename_compat": (
+            all(
+                all(marker in text for marker in ("PROJECT LING.exe", "PROJECT凌.exe", "LauncherSourceRelative"))
+                for text in (build_text, github_build_text)
+            )
+            if source_checkout
+            else True
+        ),
+        "repository_targets": (
+            all(marker in publish_text for marker in ("Name = 'ProjectLing-Private'", "Name = 'PROJECTling'"))
+            if source_checkout
+            else True
+        ),
+    }
+    missing = [name for name, ok in checks.items() if not ok]
+    score = max(0, 100 - len(missing) * 30)
+    evidence = [
+        "checks=" + ",".join(f"{name}:{int(ok)}" for name, ok in checks.items()),
+        f"windows_launcher={launcher}",
+        f"termux_run={termux_run}",
+        f"duplicate_core={','.join(duplicate_core) or '-'}",
+        f"layout={'source-checkout' if source_checkout else 'packaged-release'}",
+    ]
+    return item(
+        "windows_termux_source_parity",
+        score,
+        status_from_score(score),
+        evidence,
+        "恢复 Windows/Termux 对同一核心源码的解析和发布白名单。" if missing else "",
+    )
+
+
+def check_termux_selftest_contract() -> dict[str, Any]:
+    try:
+        completed = run_projectling(["selftest"], timeout=180)
+    except Exception as exc:
+        return item(
+            "termux_selftest_contract",
+            0,
+            "fail",
+            [f"exception={type(exc).__name__}: {exc}"],
+            "修复 ProjectLing Termux selftest。",
+        )
+    lines = [line.strip() for line in (completed.stdout or "").splitlines() if line.strip()]
+    summary = next((line for line in lines if line.startswith("ProjectLing selftest:")), lines[0] if lines else "-")
+    failures = [line[:180] for line in lines if line.startswith(("✗", "FAIL", "fail"))]
+    score = 100 if completed.returncode == 0 and not failures else 35
+    evidence = [f"rc={completed.returncode}", f"summary={summary[:220]}", f"failures={len(failures)}", *failures[:4]]
+    return item(
+        "termux_selftest_contract",
+        score,
+        status_from_score(score),
+        evidence,
+        "执行 ./run.sh selftest 并修复失败项。" if score < 85 else "",
     )
 
 
@@ -10874,7 +11080,7 @@ def check_deepseek_cache_metric_summary() -> dict[str, Any]:
 
 
 def _runner_help_probe(script_name: str, expected_text: str) -> tuple[bool, str]:
-    script = AIDEBUG_DIR / "runner" / script_name
+    script = AIDEBUG_CODE_DIR / "runner" / script_name
     if not script.exists():
         return False, f"help_probe=missing script={script}"
     try:
@@ -12533,7 +12739,12 @@ def _motd_probe_status(probe: Any) -> str:
     if not isinstance(probe, dict):
         return "-"
     if probe.get("skipped"):
-        return str(probe.get("reason") or "skipped")
+        reason = str(probe.get("reason") or "skipped")
+        return {
+            "host_startboot_missing": "host-skip",
+            "motd_missing": "motd-skip",
+            "tmux_missing": "tmux-skip",
+        }.get(reason, reason[:24])
     status = "ok" if probe.get("ok") else "fail"
     rc = probe.get("returncode")
     if rc is not None:
@@ -12764,6 +12975,95 @@ def build_health() -> dict[str, Any]:
     return payload
 
 
+def build_termux_report() -> dict[str, Any]:
+    state_before, state_before_error = _capture_runtime_state("aidebug-termux-before")
+    previous_runtime_read_only = os.environ.get("PROJECTLING_RUNTIME_STATE_READ_ONLY")
+    os.environ["PROJECTLING_RUNTIME_STATE_READ_ONLY"] = "1"
+    checks: list[dict[str, Any]] = []
+    try:
+        checks = [
+            check_termux_runtime_contract(),
+            check_termux_install_contract(),
+            check_platform_source_parity(),
+            check_layout(),
+            check_logs(),
+            check_projectling_doctor(),
+            check_termux_selftest_contract(),
+            check_tool_schema(),
+            check_actor_identity_name_contract(),
+            _check_markdown_rendering(),
+            check_focus_anchor_contract(),
+            check_route_alignment(),
+            check_api_provider_config(),
+            check_gemini_settings_contract(),
+            check_gemini_settings_persistence_contract(),
+            check_settings_exception_restoration_contract(),
+            check_api_settings_provider_persistence_contract(),
+            check_provider_switch_contract(),
+            check_gemini_planner_review_contract(),
+            check_gemini_model_list_failure_contract(),
+            check_gemini_api_test_failure_contract(),
+            check_gemini_api_test_model_safety_contract(),
+            check_settings_status_width_contract(),
+            check_gemini_diagnostic_output_contract(),
+            check_gemini_model_list_role_marker_contract(),
+            check_gemini_model_list_taxonomy_contract(),
+            check_runner_concurrency(),
+            check_persona_split(),
+            check_command_guard(),
+            check_context_budget_runtime(),
+            check_tool_fact_cards(),
+            check_memory_layout(),
+            check_context_mode_config(),
+            check_auto_runner_history(),
+            check_auto_issue_ledger(),
+            check_aidebug_read_precision_auto(),
+            check_memory_db_integrity_auto(),
+            check_context_pressure_variants_auto(),
+            check_local_stress_auto(),
+            check_terminal_logs(),
+            check_android_termux_readiness(),
+            check_motd_zshrc_smoke(),
+        ]
+    except Exception as exc:
+        checks.append(
+            item(
+                "aidebug_termux_runner",
+                0,
+                "fail",
+                [f"exception={type(exc).__name__}: {exc}"],
+                "修复 Termux health runner 未捕获异常。",
+            )
+        )
+    finally:
+        if previous_runtime_read_only is None:
+            os.environ.pop("PROJECTLING_RUNTIME_STATE_READ_ONLY", None)
+        else:
+            os.environ["PROJECTLING_RUNTIME_STATE_READ_ONLY"] = previous_runtime_read_only
+    state_after, state_after_error = _capture_runtime_state("aidebug-termux-after")
+    checks.append(
+        _runtime_state_health_item(
+            state_before,
+            state_after,
+            scope="termux-health",
+            before_error=state_before_error,
+            after_error=state_after_error,
+        )
+    )
+    total = round(sum(check["score"] for check in checks) / max(1, len(checks)), 1)
+    status = status_from_score(int(total))
+    return {
+        "generated_at": timestamp(),
+        "profile": "termux-local",
+        "runtime": "android-termux" if _is_android_termux_runtime() else "non-termux",
+        "aidebug_dir": str(AIDEBUG_DIR),
+        "projectling_dir": str(PROJECTLING_DIR),
+        "overall_score": total,
+        "overall_status": status,
+        "checks": checks,
+    }
+
+
 def build_windows_report(*, repair: bool = False, capture_ui: bool = False) -> dict[str, Any]:
     state_before, state_before_error = _capture_runtime_state("aidebug-windows-before")
     previous_runtime_read_only = os.environ.get("PROJECTLING_RUNTIME_STATE_READ_ONLY")
@@ -12853,6 +13153,28 @@ def build_windows_report(*, repair: bool = False, capture_ui: bool = False) -> d
 def write_windows_report(payload: dict[str, Any]) -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     WINDOWS_JSON.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def write_termux_report(payload: dict[str, Any]) -> None:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    NOTE_DIR.mkdir(parents=True, exist_ok=True)
+    TERMUX_JSON.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    with TERMUX_JSONL.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    lines = [
+        "# ProjectLing Termux Health",
+        "",
+        f"- generated_at: {payload['generated_at']}",
+        f"- runtime: {payload.get('runtime', '-')}",
+        f"- overall: {payload['overall_status']} / {payload['overall_score']}",
+        "",
+        "## Checks",
+    ]
+    for check in payload["checks"]:
+        lines.append(f"- {check['name']}: {check['status']} / {check['score']}")
+        if check.get("next_action"):
+            lines.append(f"  next: {check['next_action']}")
+    TERMUX_MD.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
 def classify_weak_spot(check: dict[str, Any]) -> str:
@@ -13386,15 +13708,26 @@ def print_text(payload: dict[str, Any]) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="aidebug-health")
     parser.add_argument("--json", action="store_true", help="print JSON")
-    parser.add_argument("--windows", action="store_true", help="only print Windows/WSL adapter diagnostics")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--windows", action="store_true", help="only print Windows/WSL adapter diagnostics")
+    mode.add_argument("--termux", action="store_true", help="run Android Termux readiness and local regression checks")
+    mode.add_argument("--full", action="store_true", help="run the legacy cross-platform/full evidence report")
     parser.add_argument("--repair", action="store_true", help="repair safe Windows/WSL adapter issues")
     parser.add_argument("--screenshot", action="store_true", help="also capture a Windows UI screenshot")
     parser.add_argument("--no-screenshot", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     capture_ui = bool(args.screenshot and not args.no_screenshot)
-    payload = build_windows_report(repair=args.repair, capture_ui=capture_ui) if args.windows else build_health()
+    use_termux = bool(args.termux or (_is_android_termux_runtime() and not args.windows and not args.full))
+    if args.windows:
+        payload = build_windows_report(repair=args.repair, capture_ui=capture_ui)
+    elif use_termux:
+        payload = build_termux_report()
+    else:
+        payload = build_health()
     if args.windows:
         write_windows_report(payload)
+    elif use_termux:
+        write_termux_report(payload)
     else:
         write_reports(payload)
     if args.json:

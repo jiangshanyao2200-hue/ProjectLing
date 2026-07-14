@@ -1,11 +1,18 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -euo pipefail
 
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-SCRIPT_AIDEBUG_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
-SCRIPT_PROJECTLING_DIR="$(CDPATH= cd -- "$SCRIPT_AIDEBUG_DIR/.." && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+SCRIPT_AIDEBUG_DIR="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_PROJECTLING_DIR="$(CDPATH='' cd -- "$SCRIPT_AIDEBUG_DIR/.." && pwd)"
+if [ -f "$SCRIPT_PROJECTLING_DIR/core.py" ]; then
+  CORE_PROJECTLING_DIR="$SCRIPT_PROJECTLING_DIR"
+elif [ -f "$SCRIPT_PROJECTLING_DIR/app/core.py" ]; then
+  CORE_PROJECTLING_DIR="$SCRIPT_PROJECTLING_DIR/app"
+else
+  CORE_PROJECTLING_DIR="$SCRIPT_PROJECTLING_DIR"
+fi
 if [ -z "${AITERMUX_HOME:-}" ] && [ -f "$SCRIPT_PROJECTLING_DIR/run.sh" ]; then
-  AITERMUX_HOME="$(CDPATH= cd -- "$SCRIPT_PROJECTLING_DIR/.." && pwd)"
+  AITERMUX_HOME="$(CDPATH='' cd -- "$SCRIPT_PROJECTLING_DIR/.." && pwd)"
 else
   AITERMUX_HOME="${AITERMUX_HOME:-$HOME/AItermux}"
 fi
@@ -14,8 +21,14 @@ if [ -z "${AITERMUX_AIDEBUG_DIR:-}" ] && [ -d "$SCRIPT_AIDEBUG_DIR/runner" ]; th
 else
   AIDEBUG_DIR="${AITERMUX_AIDEBUG_DIR:-$AITERMUX_HOME/projectling/aidebug}"
 fi
+AIDEBUG_CODE_DIR="$SCRIPT_AIDEBUG_DIR"
+if [ ! -d "$AIDEBUG_CODE_DIR/runner" ]; then
+  AIDEBUG_CODE_DIR="$AIDEBUG_DIR"
+fi
 LOG_DIR="$AIDEBUG_DIR/logs"
 export AITERMUX_HOME AIDEBUG_DIR AITERMUX_AIDEBUG_DIR="$AIDEBUG_DIR"
+export AIDEBUG_CODE_DIR
+export PROJECTLING_DIR="${PROJECTLING_DIR:-$CORE_PROJECTLING_DIR}"
 
 timestamp_utc() {
   date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date '+%F %T' 2>/dev/null || echo unknown
@@ -32,7 +45,9 @@ Usage:
   aidebug head [relative-path] [lines]
   aidebug list
   aidebug windows [--json] [--repair] [--screenshot]
-  aidebug health [--json]
+  aidebug health [--json] [--termux|--full]
+  aidebug termux [--json]
+  aidebug verify-termux [--profile local|live|full] [--json]
   aidebug motd-zshrc-smoke [--json] [--tty-timeout SEC]
   aidebug projectling-auto [--rounds N] [--interval SEC] [--web-query QUERY] [--live-chat-smoke]
 
@@ -148,28 +163,42 @@ main() {
         echo "aidebug: python not found" >&2
         return 127
       }
-      exec "$py" "$AIDEBUG_DIR/runner/aidebug_health.py" --windows "$@"
+      exec "$py" "$AIDEBUG_CODE_DIR/runner/aidebug_health.py" --windows "$@"
       ;;
     health)
       py="$(python_bin)" || {
         echo "aidebug: python not found" >&2
         return 127
       }
-      exec "$py" "$AIDEBUG_DIR/runner/aidebug_health.py" "$@"
+      exec "$py" "$AIDEBUG_CODE_DIR/runner/aidebug_health.py" "$@"
+      ;;
+    termux)
+      py="$(python_bin)" || {
+        echo "aidebug: python not found" >&2
+        return 127
+      }
+      exec "$py" "$AIDEBUG_CODE_DIR/runner/aidebug_health.py" --termux "$@"
+      ;;
+    verify-termux|termux-verify)
+      py="$(python_bin)" || {
+        echo "aidebug: python not found" >&2
+        return 127
+      }
+      exec "$py" "$AIDEBUG_CODE_DIR/runner/termux_verify.py" "$@"
       ;;
     motd-zshrc-smoke)
       py="$(python_bin)" || {
         echo "aidebug: python not found" >&2
         return 127
       }
-      exec "$py" "$AIDEBUG_DIR/runner/motd_zshrc_smoke.py" "$@"
+      exec "$py" "$AIDEBUG_CODE_DIR/runner/motd_zshrc_smoke.py" "$@"
       ;;
     projectling-auto)
       py="$(python_bin)" || {
         echo "aidebug: python not found" >&2
         return 127
       }
-      exec "$py" "$AIDEBUG_DIR/runner/projectling_auto.py" "$@"
+      exec "$py" "$AIDEBUG_CODE_DIR/runner/projectling_auto.py" "$@"
       ;;
     --help|-h|help) usage ;;
     *)
