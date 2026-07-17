@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+import getpass
 from html import unescape
 import json
 import os
@@ -19,6 +20,7 @@ import time
 from typing import Any, Sequence
 import unicodedata
 from types import SimpleNamespace
+from urllib.parse import urlsplit, urlunsplit
 
 
 def _force_utf8_stdio() -> None:
@@ -52,16 +54,33 @@ from projectling import (
     is_role_locked,
     DEEPSEEK_FAST_MODEL,
     DEEPSEEK_PRECISE_MODEL,
+    GPT_FAST_MODEL,
+    GPT_PRECISE_MODEL,
+    GPT_DEFAULT_BASE_URL,
+    GROK_FAST_MODEL,
+    GROK_PRECISE_MODEL,
+    GROK_DEFAULT_BASE_URL,
     ProjectLingConfig,
     ProjectLingEngine,
     PromptBundle,
+    StarAPIConfig,
     ToolContext,
     ToolRegistry,
     GEMINI_FAST_MODEL,
     GEMINI_PRECISE_MODEL,
     GEMINI_DEFAULT_BASE_URL,
+    STAR_PARAMETER_PROFILE_ORDER,
     _api_provider_value,
     _collab_mode_value,
+    _normalize_gpt_reasoning_effort,
+    _normalize_gemini_reasoning_effort,
+    _normalize_grok_reasoning_effort,
+    _normalize_reasoning_effort,
+    _normalize_star_parameters,
+    _parameter_profile_value,
+    _provider_default_base_url,
+    _provider_default_model,
+    _provider_label_value,
     _format_remaining_text,
     _remaining_seconds_for_role,
     build_roll_sequence,
@@ -115,13 +134,23 @@ MODEL_CHOICES: list[tuple[str, str]] = [
 
 DEEPSEEK_SETTINGS_MODEL_CHOICES: tuple[tuple[str, str], ...] = (
     (DEEPSEEK_PRECISE_MODEL, "V4 Pro · 主星/精确"),
-    (DEEPSEEK_FAST_MODEL, "V4 Flash · 执行/快速"),
+    (DEEPSEEK_FAST_MODEL, "V4 Flash · 执行星/快速"),
+)
+
+STAR_SLOT_LABELS = {"main": "主星", "executor": "执行星"}
+STAR_PARAMETER_PROFILE_CHOICES: tuple[tuple[str, str, str], ...] = (
+    ("default", "默认", "均衡推理与稳定输出"),
+    ("coding", "编程", "低随机性、重视代码与工具精度"),
+    ("data", "数据", "最保守采样、强化分析"),
+    ("daily", "日常", "自然、清楚、不过度推理"),
+    ("chat", "闲聊", "更轻松、更有交流感"),
+    ("creative", "想象力", "更开放的表达与发散"),
 )
 
 COLLAB_MODE_CHOICES: tuple[tuple[str, str, str], ...] = (
-    ("rapid", "快速模式", "轻量主星 + 轻量执行星"),
-    ("standard", "标准模式", "强主星 + 快执行星"),
-    ("precise", "精确模式", "强主星 + 强执行星"),
+    ("rapid", "快速模式", "固定双星模型，压低推理开销"),
+    ("standard", "标准模式", "固定双星模型，使用各自场景预设"),
+    ("precise", "精确模式", "固定双星模型，双侧启用推理"),
 )
 COLLAB_MODE_ORDER = tuple(mode for mode, _label, _desc in COLLAB_MODE_CHOICES)
 COLLAB_MODE_ALIASES = {
@@ -911,12 +940,49 @@ def _print_setting_section(title: str, *, width: int | None = None) -> None:
     _print_fit(f"{title}", width=render_width)
 
 
+def _compact_model_marker(marker: str, *, width: int) -> str:
+    """Keep star-role markers visible before optional taxonomy labels."""
+    parts = [part.strip() for part in re.split(r"\s*/\s*", str(marker or "")) if part.strip()]
+    if not parts:
+        return ""
+
+    role_parts = [part for part in parts if part in {"主星", "执行星"}]
+    other_parts = [part for part in parts if part not in {"主星", "执行星"}]
+    if width < 24:
+        aliases = {"主星": "主", "执行星": "执", "当前": "现"}
+        role_parts = [aliases.get(part, part) for part in role_parts]
+        other_parts = [aliases.get(part, part) for part in other_parts]
+        separator = "/"
+    elif width < 32 and len(role_parts) > 1:
+        aliases = {"主星": "主", "执行星": "执"}
+        role_parts = [aliases.get(part, part) for part in role_parts]
+        separator = "/"
+    else:
+        separator = " / "
+
+    ordered = [*role_parts, *other_parts]
+    marker_budget = max(1, width - _display_width("00. ") - 3)
+    while len(ordered) > len(role_parts) and _display_width(separator.join(ordered)) > marker_budget:
+        ordered.pop()
+    marker_text = separator.join(ordered)
+    if _display_width(marker_text) > marker_budget:
+        marker_text = _middle_truncate_display(marker_text, marker_budget)
+    return marker_text
+
+
 def _print_indexed_model(index: int, model_id: str, marker: str = "", *, width: int | None = None) -> None:
-    render_width = width if width is not None else _compact_render_width()
+    render_width = max(8, width if width is not None else _compact_render_width())
     prefix = f"{index:02d}. "
-    suffix = f" {marker.strip()}" if marker.strip() else ""
-    model_width = max(4, render_width - _display_width(prefix) - _display_width(suffix))
-    _print_fit(f"{prefix}{_middle_truncate_display(model_id, model_width)}{suffix}", width=render_width)
+    marker_text = _compact_model_marker(marker, width=render_width)
+    suffix = f" {marker_text}" if marker_text else ""
+    available = render_width - _display_width(prefix) - _display_width(suffix)
+    if available < 1:
+        suffix_budget = max(1, render_width - _display_width(prefix) - 1)
+        marker_text = _middle_truncate_display(marker_text, suffix_budget)
+        suffix = f" {marker_text}" if marker_text else ""
+        available = max(1, render_width - _display_width(prefix) - _display_width(suffix))
+    line = f"{prefix}{_middle_truncate_display(model_id, available)}{suffix}"
+    _print_fit(line, width=render_width)
 
 
 def _relay_model_tags(model_id: str) -> list[str]:
@@ -1767,6 +1833,14 @@ def _prompt_line(prompt: str) -> str:
         return ""
 
 
+def _prompt_secret_line(prompt: str) -> str:
+    try:
+        return getpass.getpass(prompt)
+    except (EOFError, KeyboardInterrupt):
+        print("")
+        return ""
+
+
 def _prompt_menu_choice(exit_hint: str = "0 返回") -> str:
     width = _compact_render_width()
     print("")
@@ -1798,9 +1872,18 @@ def _pick_model_interactive(current_model: str) -> str | None:
         return MODEL_CHOICES[int(picked) - 1][0]
     if picked == "3":
         custom = _prompt_line("输入模型名 > ").strip()
-        return custom or None
+        return _normalize_custom_model_id(custom)
     print("无效输入，保持原样。")
     return None
+
+
+def _normalize_custom_model_id(raw: str | None) -> str | None:
+    value = str(raw or "").strip()
+    if not value or len(value) > 240:
+        return None
+    if any(char.isspace() or unicodedata.category(char).startswith("C") for char in value):
+        return None
+    return value
 
 
 def _unique_model_ids(ids: Sequence[str]) -> list[str]:
@@ -1816,21 +1899,13 @@ def _unique_model_ids(ids: Sequence[str]) -> list[str]:
 
 
 def _configured_role_model(config: ProjectLingConfig, role: str) -> str:
-    provider = _api_provider_value(getattr(config, "api_provider", ""))
-    if provider == "gemini":
-        if role == "planner":
-            return str(getattr(config, "gemini_planner_model", GEMINI_PRECISE_MODEL) or GEMINI_PRECISE_MODEL)
-        return str(getattr(config, "gemini_executor_model", GEMINI_FAST_MODEL) or GEMINI_FAST_MODEL)
-    if role == "planner":
-        return str(getattr(config, "deepseek_planner_model", DEEPSEEK_PRECISE_MODEL) or DEEPSEEK_PRECISE_MODEL)
-    return str(getattr(config, "deepseek_executor_model", DEEPSEEK_FAST_MODEL) or DEEPSEEK_FAST_MODEL)
+    star = config.main_api if str(role or "").strip().lower() in {"planner", "main"} else config.executor_api
+    return str(star.model or _provider_default_model(star.provider, star.slot))
 
 
 def _model_update_key(config: ProjectLingConfig, role: str) -> str:
-    provider = _api_provider_value(getattr(config, "api_provider", ""))
-    if provider == "gemini":
-        return "GEMINI_PLANNER_MODEL" if role == "planner" else "GEMINI_EXECUTOR_MODEL"
-    return "DEEPSEEK_PLANNER_MODEL" if role == "planner" else "DEEPSEEK_EXECUTOR_MODEL"
+    del config
+    return "PROJECTLING_MAIN_MODEL" if str(role or "").strip().lower() in {"planner", "main"} else "PROJECTLING_EXECUTOR_MODEL"
 
 
 def _role_label(role: str) -> str:
@@ -1859,9 +1934,16 @@ def _pick_model_from_list(
         if model_id == current_model and "当前" not in marker:
             marker = (f"{marker} / 当前" if marker else "当前").strip(" /")
         _print_indexed_model(index, model_id, marker, width=width)
+    _print_fit("C. 自定义模型名", width=width)
     raw_choice = _prompt_line("选择模型 > ").strip()
     if not raw_choice or raw_choice == "0":
         return None
+    if raw_choice.lower() in {"c", "custom", "自定义"}:
+        custom = _prompt_line("输入模型名 > ").strip()
+        normalized_custom = _normalize_custom_model_id(custom)
+        if normalized_custom is None and custom:
+            _print_setting_rejected("模型名不能包含空白/控制字符，且最长 240 字符。", keep_label="保留", keep_value=current_model, width=width)
+        return normalized_custom
     try:
         choice = int(raw_choice)
     except ValueError:
@@ -1875,45 +1957,47 @@ def _pick_model_from_list(
 
 def _pick_provider_model_interactive(config: ProjectLingConfig, role: str) -> str | None:
     width = _compact_render_width()
-    provider = _api_provider_value(getattr(config, "api_provider", ""))
+    star = config.main_api if str(role or "").strip().lower() in {"planner", "main"} else config.executor_api
+    provider = _api_provider_value(star.provider)
     role_text = _role_label(role)
     current_model = _configured_role_model(config, role)
     planner_model = _configured_role_model(config, "planner")
     executor_model = _configured_role_model(config, "executor")
     print("")
-    if provider == "gemini":
-        _print_fit(f"Gemini {role_text}模型", width=width)
-        if not getattr(config, "api_key", None):
-            _print_fit("未设置 GEMINI_API_KEY。", width=width)
-            _print_fit("下一步：先写入 Gemini API Key。", width=width)
-            return None
-        _print_fit("正在从当前 relay 拉取模型列表...", width=width)
+    _print_fit(f"{_provider_label_value(provider)} {role_text}模型", width=width)
+    ids: list[str] = []
+    if star.api_key:
+        _print_fit("正在从当前地址拉取模型列表...", width=width)
         try:
-            payload = DeepSeekClient(config).list_models()
+            payload = _client_for_star(config, star).list_models()
+            ids = _extract_model_ids(payload)
         except Exception as exc:
             _print_fit("模型列表拉取失败。", width=width)
             _print_fit_wrapped(exc, width=width)
-            _print_fit("下一步：检查 API Key、Base URL、模型列表接口和网络。", width=width)
-            return None
-        ids = _extract_model_ids(payload)
-        if not ids:
-            _print_fit("模型列表为空或响应结构不含 data[].id。", width=width)
-            return None
-        _print_model_taxonomy_hint(ids, width=width)
-        return _pick_model_from_list(
-            title=f"选择 Gemini {role_text}模型",
-            ids=ids,
-            current_model=current_model,
-            planner_model=planner_model,
-            executor_model=executor_model,
-        )
+            _print_fit("仍可从内置候选或自定义模型名继续。", width=width)
+    else:
+        _print_fit("当前星位未配置 Key；可先选内置候选或自定义模型名。", width=width)
 
-    ids = [model_id for model_id, _desc in DEEPSEEK_SETTINGS_MODEL_CHOICES]
-    _print_fit(f"选择 DeepSeek {role_text}模型", width=width)
-    for model_id, desc in DEEPSEEK_SETTINGS_MODEL_CHOICES:
-        _print_fit(f"- {model_id} · {desc}", width=width)
+    provider_tokens = {
+        "gpt": ("gpt", "codex"),
+        "gemini": ("gemini",),
+        "grok": ("grok",),
+        "deepseek": ("deepseek",),
+    }[provider]
+    filtered = [model_id for model_id in ids if any(token in model_id.lower() for token in provider_tokens)]
+    if filtered:
+        ids = filtered
+    defaults = {
+        "gpt": [GPT_PRECISE_MODEL, GPT_FAST_MODEL],
+        "gemini": [GEMINI_PRECISE_MODEL, GEMINI_FAST_MODEL],
+        "grok": [GROK_PRECISE_MODEL, GROK_FAST_MODEL],
+        "deepseek": [DEEPSEEK_PRECISE_MODEL, DEEPSEEK_FAST_MODEL],
+    }[provider]
+    ids = _unique_model_ids([*ids, *defaults])
+    if ids:
+        _print_model_taxonomy_hint(ids, width=width)
     return _pick_model_from_list(
-        title="DeepSeek 可选模型",
+        title=f"选择 {_provider_label_value(provider)} {role_text}模型",
         ids=ids,
         current_model=current_model,
         planner_model=planner_model,
@@ -1951,9 +2035,14 @@ def _collab_mode_models(mode: str, config: ProjectLingConfig | None = None) -> t
     return engine._planner_model_for_mode(mode), engine._executor_model_for_mode(mode)
 
 
-def _provider_label(config: ProjectLingConfig) -> str:
-    provider = _api_provider_value(getattr(config, "api_provider", ""))
-    return "Gemini" if provider == "gemini" else "DeepSeek"
+def _provider_label(config_or_provider: ProjectLingConfig | StarAPIConfig | str) -> str:
+    if isinstance(config_or_provider, ProjectLingConfig):
+        provider = config_or_provider.main_api.provider
+    elif isinstance(config_or_provider, StarAPIConfig):
+        provider = config_or_provider.provider
+    else:
+        provider = str(config_or_provider or "")
+    return _provider_label_value(provider)
 
 
 def _collab_mode_models_legacy(mode: str) -> tuple[str, str]:
@@ -1973,11 +2062,108 @@ def _collab_mode_detail(mode: str, config: ProjectLingConfig | None = None) -> s
     return f"{label} · {desc}".strip(" ·")
 
 
+def _collab_mode_label_zh(mode: str | None) -> str:
+    normalized = _collab_mode_value(mode)
+    return {
+        "rapid": "快速",
+        "standard": "标准",
+        "precise": "精确",
+    }.get(normalized, normalized)
+
+
+def _compact_surface_model(model: str, provider: str) -> str:
+    value = str(model or "").strip()
+    normalized_provider = _api_provider_value(provider)
+    prefix = {
+        "gpt": "gpt-",
+        "gemini": "gemini-",
+        "grok": "grok-",
+        "deepseek": "deepseek-",
+    }[normalized_provider]
+    if value.lower().startswith(prefix):
+        value = value[len(prefix) :]
+    return value or "未设置"
+
+
+def _dualstar_surface_line(config: ProjectLingConfig) -> str:
+    planner_model, executor_model = _collab_mode_models(config.collab_mode, config)
+    planner = _compact_surface_model(planner_model, config.main_api.provider)
+    executor = _compact_surface_model(executor_model, config.executor_api.provider)
+    main_provider_label = _provider_label(config.main_api)
+    executor_provider_label = _provider_label(config.executor_api)
+    mode_label = _collab_mode_label_zh(config.collab_mode)
+    if main_provider_label == executor_provider_label and planner == executor:
+        return f"● {main_provider_label} · {mode_label} · 双星 {planner}"
+    return f"● {mode_label} · 主 {main_provider_label}/{planner} · 执 {executor_provider_label}/{executor}"
+
+
+def _build_surface_status_payload(config: ProjectLingConfig) -> dict[str, Any]:
+    mode = _collab_mode_value(getattr(config, "collab_mode", ""))
+    engine = ProjectLingEngine(config)
+    planner_model = engine._planner_model_for_mode(mode)
+    executor_model = engine._executor_model_for_mode(mode)
+    active_role, sequence_seed = resolve_current_role(config)
+    bundle = resolve_persona_bundle(config, role=active_role, seed=sequence_seed)
+    locked = is_role_locked(config)
+    remaining_text = "已锁定" if locked else _format_remaining_text(_remaining_seconds_for_role(config, active_role))
+    return {
+        "status": "ok",
+        "provider": config.main_api.provider,
+        "provider_label": _provider_label(config.main_api),
+        "api_key_configured": bool(config.main_api.api_key and config.executor_api.api_key),
+        "main_provider": config.main_api.provider,
+        "main_provider_label": _provider_label(config.main_api),
+        "main_api_key_configured": bool(config.main_api.api_key),
+        "main_parameter_profile": config.main_api.parameter_profile,
+        "executor_provider": config.executor_api.provider,
+        "executor_provider_label": _provider_label(config.executor_api),
+        "executor_api_key_configured": bool(config.executor_api.api_key),
+        "executor_parameter_profile": config.executor_api.parameter_profile,
+        "collab_mode": mode,
+        "collab_mode_label": _collab_mode_label_zh(mode),
+        "planner_model": planner_model,
+        "executor_model": executor_model,
+        "planner_thinking": engine._planner_thinking_for_mode(mode),
+        "executor_thinking": engine._executor_thinking_for_mode(mode),
+        "role_locked": locked,
+        "role_remaining": remaining_text,
+        "main_role": {
+            "name_zh": active_role.name_zh,
+            "name_en": active_role.name_en,
+        },
+        "executor_role": {
+            "name_zh": bundle.liaison.name_zh if bundle.liaison is not None else "",
+            "name_en": bundle.liaison.name_en if bundle.liaison is not None else "",
+        },
+    }
+
+
+def _render_surface_status(payload: dict[str, Any]) -> None:
+    width = _compact_render_width()
+    main_role = payload.get("main_role") if isinstance(payload.get("main_role"), dict) else {}
+    executor_role = payload.get("executor_role") if isinstance(payload.get("executor_role"), dict) else {}
+    main_role_text = " / ".join(part for part in (main_role.get("name_zh"), main_role.get("name_en")) if part) or "未配置"
+    executor_role_text = " / ".join(part for part in (executor_role.get("name_zh"), executor_role.get("name_en")) if part) or "未配置"
+    print("")
+    _print_fit("PROJECT凌 状态", width=width)
+    _print_setting_pair("主星 API", payload.get("main_provider_label") or payload.get("main_provider"), width=width)
+    _print_setting_pair("执行星 API", payload.get("executor_provider_label") or payload.get("executor_provider"), width=width)
+    _print_setting_pair("协作模式", payload.get("collab_mode_label") or payload.get("collab_mode"), width=width)
+    _print_setting_pair("主星模型", payload.get("planner_model"), width=width)
+    _print_setting_pair("执行星模型", payload.get("executor_model"), width=width)
+    _print_setting_pair("主星角色", main_role_text, width=width)
+    _print_setting_pair("执行星角色", executor_role_text, width=width)
+    _print_setting_pair("角色状态", payload.get("role_remaining"), width=width)
+    _print_setting_pair("主星 Key", "已配置" if payload.get("main_api_key_configured") else "未配置", width=width)
+    _print_setting_pair("执行星 Key", "已配置" if payload.get("executor_api_key_configured") else "未配置", width=width)
+
+
 def _render_model_mode_menu(current: ProjectLingConfig) -> None:
     current_mode = _collab_mode_value(current.collab_mode)
     print("")
     print("协作模式")
-    print(f"Provider：{_provider_label(current)}")
+    print(f"主星：{_provider_label(current.main_api)} / {current.main_api.model}")
+    print(f"执行星：{_provider_label(current.executor_api)} / {current.executor_api.model}")
     print(f"当前：{_collab_mode_detail(current_mode, current)}")
     for index, (mode, label, desc) in enumerate(COLLAB_MODE_CHOICES, start=1):
         marker = "  当前" if mode == current_mode else ""
@@ -2033,31 +2219,65 @@ def _api_provider_input_value(raw: str | None) -> str | None:
     if not value:
         return None
     aliases = {
+        "openai": "gpt",
+        "codex": "gpt",
         "ds": "deepseek",
         "deepseek-v4": "deepseek",
         "gemini-openai": "gemini",
         "gemini-relay": "gemini",
+        "xai": "grok",
+        "x.ai": "grok",
     }
     value = aliases.get(value, value)
-    return value if value in {"deepseek", "gemini"} else None
+    return value if value in {"gpt", "gemini", "grok", "deepseek"} else None
 
 
-def _choose_provider_interactive(current: ProjectLingConfig) -> str | None:
+def _normalize_http_base_url(raw: str | None) -> str | None:
+    value = str(raw or "").strip()
+    if not value or any(char.isspace() for char in value):
+        return None
+    try:
+        parsed = urlsplit(value)
+        _ = parsed.port
+    except ValueError:
+        return None
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        return None
+    if parsed.username is not None or parsed.password is not None:
+        return None
+    if parsed.query or parsed.fragment:
+        return None
+    path = parsed.path.rstrip("/")
+    return urlunsplit((parsed.scheme.lower(), parsed.netloc, path, "", ""))
+
+
+def _choose_provider_interactive(current: ProjectLingConfig, star: StarAPIConfig | None = None) -> str | None:
     width = _compact_render_width()
-    current_provider = _api_provider_value(getattr(current, "api_provider", ""))
+    active_star = star or current.main_api
+    current_provider = _api_provider_value(active_star.provider)
     print("")
     _print_fit("选择服务商", width=width)
-    _print_setting_option(1, "Gemini 中转站", "推荐" if current_provider == "gemini" else "", width=width)
-    _print_setting_option(2, "DeepSeek", "当前" if current_provider == "deepseek" else "", width=width)
+    _print_setting_option(1, "GPT / Codex", "当前" if current_provider == "gpt" else "", width=width)
+    _print_setting_option(2, "Gemini", "当前" if current_provider == "gemini" else "", width=width)
+    _print_setting_option(3, "Grok", "当前" if current_provider == "grok" else "", width=width)
+    _print_setting_option(4, "DeepSeek", "当前" if current_provider == "deepseek" else "", width=width)
     _print_setting_option(0, "保持不变", width=width)
     raw = _prompt_menu_choice("空输入取消").lower()
     if not raw or raw == "0":
         return None
     aliases = {
-        "1": "gemini",
+        "1": "gpt",
+        "o": "gpt",
+        "gpt": "gpt",
+        "codex": "gpt",
+        "2": "gemini",
         "g": "gemini",
         "gemini": "gemini",
-        "2": "deepseek",
+        "3": "grok",
+        "x": "grok",
+        "grok": "grok",
+        "xai": "grok",
+        "4": "deepseek",
         "d": "deepseek",
         "ds": "deepseek",
         "deepseek": "deepseek",
@@ -2065,30 +2285,38 @@ def _choose_provider_interactive(current: ProjectLingConfig) -> str | None:
     }
     provider = aliases.get(raw)
     if provider is None:
-        _print_setting_rejected("请选择 1 或 2。", keep_label="保留", keep_value=current_provider, width=width)
+        _print_setting_rejected("请选择 1-4。", keep_label="保留", keep_value=current_provider, width=width)
     return provider
 
 
-def _choose_base_url_interactive(current: ProjectLingConfig) -> str | None:
+def _choose_base_url_interactive(current: ProjectLingConfig, star: StarAPIConfig | None = None) -> str | None:
     width = _compact_render_width()
-    provider = _api_provider_value(getattr(current, "api_provider", ""))
-    current_url = str(current.base_url or "").strip()
+    active_star = star or current.main_api
+    provider = _api_provider_value(active_star.provider)
+    current_url = str(active_star.base_url or "").strip()
     print("")
     _print_fit("选择中转站", width=width)
-    if provider == "gemini":
-        _print_setting_option(1, "New API 中转站", GEMINI_DEFAULT_BASE_URL, width=width)
+    if provider in {"gpt", "gemini", "grok"}:
+        _print_setting_option(1, "共享 OpenAI 兼容地址", _provider_default_base_url(provider), width=width)
         _print_setting_option(2, "保持当前", current_url or "未设置", width=width)
         _print_setting_option(3, "手动输入", "高级", width=width)
         raw = _prompt_menu_choice("空输入保持原样")
         if not raw or raw == "0" or raw == "2":
             return None
         if raw == "1":
-            return GEMINI_DEFAULT_BASE_URL
+            return _provider_default_base_url(provider)
         if raw == "3":
             custom = _prompt_line("输入 Base URL > ").strip()
-            return custom or None
+            normalized = _normalize_http_base_url(custom)
+            if custom and normalized is None:
+                _print_setting_rejected("Base URL 必须是无账号、无查询参数的 http(s) 地址。", keep_label="保留", keep_value=current_url, width=width)
+            return normalized
         if raw.startswith(("http://", "https://")):
-            return raw
+            normalized = _normalize_http_base_url(raw)
+            if normalized is not None:
+                return normalized
+            _print_setting_rejected("Base URL 格式无效。", keep_label="保留", keep_value=current_url, width=width)
+            return None
         _print_setting_rejected("请选择列表编号。", keep_label="保留", keep_value=current_url, width=width)
         return None
 
@@ -2103,11 +2331,304 @@ def _choose_base_url_interactive(current: ProjectLingConfig) -> str | None:
         return default_url
     if raw == "3":
         custom = _prompt_line("输入 Base URL > ").strip()
-        return custom or None
+        normalized = _normalize_http_base_url(custom)
+        if custom and normalized is None:
+            _print_setting_rejected("Base URL 必须是无账号、无查询参数的 http(s) 地址。", keep_label="保留", keep_value=current_url, width=width)
+        return normalized
     if raw.startswith(("http://", "https://")):
-        return raw
+        normalized = _normalize_http_base_url(raw)
+        if normalized is not None:
+            return normalized
+        _print_setting_rejected("Base URL 格式无效。", keep_label="保留", keep_value=current_url, width=width)
+        return None
     _print_setting_rejected("请选择列表编号。", keep_label="保留", keep_value=current_url, width=width)
     return None
+
+
+def _star_for_slot(config: ProjectLingConfig, slot: str) -> StarAPIConfig:
+    return config.executor_api if str(slot or "").strip().lower() == "executor" else config.main_api
+
+
+def _legacy_config_view_for_star(config: ProjectLingConfig, star: StarAPIConfig) -> ProjectLingConfig:
+    updates: dict[str, Any] = {
+        "api_provider": star.provider,
+        "api_key": star.api_key,
+        "base_url": star.base_url,
+        "model": star.model,
+        "temperature": float(star.parameters.get("temperature", config.temperature)),
+        "reasoning_effort": str(star.parameters.get("reasoning_effort") or config.reasoning_effort),
+        "max_tokens": star.parameters.get("max_tokens") if isinstance(star.parameters.get("max_tokens"), int) else None,
+        "timeout_seconds": star.timeout_seconds,
+        "retry_count": star.retry_count,
+        "enable_sse": star.enable_sse,
+    }
+    if star.provider == "gpt":
+        updates.update({"gpt_api_key": star.api_key, "gpt_base_url": star.base_url})
+    elif star.provider == "gemini":
+        updates.update(
+            {
+                "gemini_api_key": star.api_key,
+                "gemini_base_url": star.base_url,
+                "gemini_top_p": star.parameters.get("top_p"),
+                "gemini_top_k": star.parameters.get("top_k"),
+                "gemini_candidate_count": star.parameters.get("candidate_count"),
+                "gemini_seed": star.parameters.get("seed"),
+                "gemini_presence_penalty": star.parameters.get("presence_penalty"),
+                "gemini_frequency_penalty": star.parameters.get("frequency_penalty"),
+                "gemini_stop_sequences": tuple(star.parameters.get("stop") or ()),
+                "gemini_response_mime_type": str(star.parameters.get("response_mime_type") or ""),
+                "gemini_reasoning_effort": str(star.parameters.get("reasoning_effort") or "high"),
+                "gemini_extra_body_json": json.dumps(star.parameters.get("extra_body") or {}, ensure_ascii=False),
+            }
+        )
+    elif star.provider == "grok":
+        updates.update({"grok_api_key": star.api_key, "grok_base_url": star.base_url})
+    else:
+        updates.update({"deepseek_api_key": star.api_key, "deepseek_base_url": star.base_url})
+    return replace(config, **updates)
+
+
+def _client_for_star(config: ProjectLingConfig, star: StarAPIConfig) -> DeepSeekClient:
+    # AIDEBUG replaces the transport with small one-argument fakes. Keep that
+    # diagnostic seam while the production client receives the explicit star contract.
+    if getattr(DeepSeekClient, "__module__", "") == "projectling":
+        return DeepSeekClient(config, star)
+    return DeepSeekClient(_legacy_config_view_for_star(config, star))
+
+
+def _star_env_prefix(slot: str) -> str:
+    return "PROJECTLING_EXECUTOR" if str(slot or "").strip().lower() == "executor" else "PROJECTLING_MAIN"
+
+
+def _star_params_override(config: ProjectLingConfig, slot: str) -> dict[str, Any]:
+    key = f"{_star_env_prefix(slot)}_PARAMS_JSON"
+    try:
+        lines = config.env_file_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return {}
+    raw = ""
+    for line in lines:
+        if line.startswith(f"{key}="):
+            raw = line.split("=", 1)[1].strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _save_star_params_override(
+    config: ProjectLingConfig,
+    slot: str,
+    updates: dict[str, Any],
+) -> ProjectLingConfig:
+    payload = _star_params_override(config, slot)
+    payload.update(updates)
+    key = f"{_star_env_prefix(slot)}_PARAMS_JSON"
+    return _save_config_value(config, {key: json.dumps(payload, ensure_ascii=False, separators=(",", ":"))})
+
+
+def _choose_parameter_profile_interactive(star: StarAPIConfig) -> str | None:
+    width = _compact_render_width()
+    current = _parameter_profile_value(star.parameter_profile)
+    print("")
+    _print_fit("选择场景预设", width=width)
+    _print_fit("预设会自动配置 Provider 支持的推理、采样与多样性参数，并清除旧的高级覆盖。", width=width)
+    for index, (value, label, desc) in enumerate(STAR_PARAMETER_PROFILE_CHOICES, start=1):
+        marker = "当前" if value == current else desc
+        _print_setting_option(index, label, marker, width=width)
+    _print_setting_option(0, "保持不变", width=width)
+    raw = _prompt_menu_choice("空输入保持原样")
+    if not raw or raw == "0":
+        return None
+    try:
+        index = int(raw) - 1
+    except ValueError:
+        index = -1
+    if 0 <= index < len(STAR_PARAMETER_PROFILE_CHOICES):
+        return STAR_PARAMETER_PROFILE_CHOICES[index][0]
+    _print_setting_rejected("请选择列表编号。", keep_label="保留", keep_value=_parameter_profile_label(current), width=width)
+    return None
+
+
+def _choose_indexed_value(
+    title: str,
+    choices: Sequence[tuple[str, Any]],
+    *,
+    current: Any = None,
+) -> tuple[bool, Any]:
+    width = _compact_render_width()
+    print("")
+    _print_fit(title, width=width)
+    for index, (label, value) in enumerate(choices, start=1):
+        marker = "当前" if value == current else ""
+        _print_setting_option(index, label, marker, width=width)
+    _print_setting_option(0, "保持不变", width=width)
+    raw = _prompt_menu_choice("空输入保持原样")
+    if not raw or raw == "0":
+        return False, None
+    try:
+        index = int(raw) - 1
+    except ValueError:
+        index = -1
+    if 0 <= index < len(choices):
+        return True, choices[index][1]
+    _print_setting_rejected("请选择列表编号。", width=width)
+    return False, None
+
+
+def _reasoning_choices_for_star(star: StarAPIConfig) -> tuple[str, ...]:
+    provider = _api_provider_value(star.provider)
+    model = star.model.lower()
+    if provider == "gpt":
+        return ("low", "medium", "high", "xhigh", "ultra") if "5.6" in model else ("low", "medium", "high", "xhigh")
+    if provider == "gemini":
+        return ("none", "low", "high")
+    if provider == "grok":
+        return ("none", "low", "medium", "high")
+    return ("high", "max")
+
+
+def _reasoning_choice_label(value: str) -> str:
+    label = {
+        "none": "关闭",
+        "low": "轻量",
+        "medium": "标准",
+        "high": "深入",
+        "xhigh": "超高",
+        "ultra": "极致",
+        "max": "最大",
+    }.get(value, value)
+    return f"{label} · {value}"
+
+
+def _run_star_advanced_params_settings_ui(slot: str) -> None:
+    normalized_slot = "executor" if str(slot or "").strip().lower() == "executor" else "main"
+    prefix = _star_env_prefix(normalized_slot)
+    while True:
+        current = load_config()
+        star = _star_for_slot(current, normalized_slot)
+        width = _compact_render_width()
+        print("")
+        _print_fit(f"{STAR_SLOT_LABELS[normalized_slot]}高级参数 · {_provider_label(star)}", width=width)
+        _print_setting_pair("当前", _star_parameter_summary(star), width=width)
+        seed_supported = star.provider in {"gemini", "grok"}
+        _print_setting_option(1, "推理强度", str(star.parameters.get("reasoning_effort") or "自动"), width=width)
+        _print_setting_option(2, "输出长度", str(star.parameters.get("max_tokens") or "自动"), width=width)
+        style_label = "表达详细度" if star.provider == "gpt" else "采样风格"
+        _print_setting_option(3, style_label, width=width)
+        _print_setting_option(4, "多样性 / 重复控制", width=width)
+        seed_detail = (
+            str(star.parameters.get("seed") if star.parameters.get("seed") is not None else "自动")
+            if seed_supported
+            else "当前 Provider 不支持"
+        )
+        _print_setting_option(5, "固定 Seed", seed_detail, width=width)
+        _print_setting_option(6, "高级 JSON", "可选", width=width)
+        _print_setting_option(7, "恢复当前预设", "清除高级覆盖", width=width)
+        _print_setting_option(0, "返回", width=width)
+        choice = _prompt_menu_choice("0 返回")
+
+        if choice == "1":
+            efforts = _reasoning_choices_for_star(star)
+            selected, value = _choose_indexed_value(
+                "选择推理强度",
+                [(_reasoning_choice_label(item), item) for item in efforts],
+                current=str(star.parameters.get("reasoning_effort") or ""),
+            )
+            if selected:
+                _save_star_params_override(current, normalized_slot, {"reasoning_effort": value})
+                _print_setting_saved("推理强度", value, width=width)
+            continue
+        if choice == "2":
+            selected, value = _choose_indexed_value(
+                "选择输出长度",
+                [("自动", None), ("短 · 512", 512), ("标准 · 2048", 2048), ("长 · 8192", 8192), ("超长 · 16384", 16384)],
+                current=star.parameters.get("max_tokens"),
+            )
+            if selected:
+                _save_star_params_override(current, normalized_slot, {"max_tokens": value})
+                _print_setting_saved("输出长度", "自动" if value is None else value, width=width)
+            continue
+        if choice == "3":
+            if star.provider == "gpt":
+                selected, value = _choose_indexed_value(
+                    "选择表达详细度",
+                    [("简洁", "low"), ("均衡", "medium"), ("详细", "high")],
+                    current=star.parameters.get("verbosity"),
+                )
+                updates = {"verbosity": value} if selected else {}
+            else:
+                styles = [
+                    ("严谨", {"temperature": 0.0, "top_p": 0.7}),
+                    ("均衡", {"temperature": 0.2, "top_p": 0.9}),
+                    ("自然", {"temperature": 0.6, "top_p": 0.95}),
+                    ("想象力", {"temperature": 1.0, "top_p": 1.0}),
+                ]
+                selected, updates = _choose_indexed_value("选择采样风格", styles)
+            if selected:
+                _save_star_params_override(current, normalized_slot, updates)
+                _print_setting_saved(style_label, "已更新", width=width)
+            continue
+        if choice == "4":
+            if star.provider == "gemini":
+                selected, value = _choose_indexed_value(
+                    "选择 Gemini 多样性",
+                    [("聚焦", 16), ("均衡", 40), ("开放", 64)],
+                    current=star.parameters.get("top_k"),
+                )
+                updates = {"top_k": value, "candidate_count": 1} if selected else {}
+            elif star.provider == "gpt":
+                _print_fit("GPT / Codex 使用推理强度与表达详细度控制；无需重复惩罚。", width=width)
+                continue
+            else:
+                selected, value = _choose_indexed_value(
+                    "选择重复控制",
+                    [("自动", None), ("轻度", 0.2), ("强", 0.6)],
+                )
+                updates = {"presence_penalty": value, "frequency_penalty": value} if selected else {}
+            if selected:
+                _save_star_params_override(current, normalized_slot, updates)
+                _print_setting_saved("多样性", "已更新", width=width)
+            continue
+        if choice == "5":
+            if not seed_supported:
+                _print_fit(f"{_provider_label(star)} 不发送 Seed；设置未修改。", width=width)
+                continue
+            selected, value = _choose_indexed_value(
+                "选择 Seed",
+                [("自动", None), ("固定 42", 42), ("固定 2026", 2026)],
+                current=star.parameters.get("seed"),
+            )
+            if selected:
+                _save_star_params_override(current, normalized_slot, {"seed": value})
+                _print_setting_saved("Seed", "自动" if value is None else value, width=width)
+            continue
+        if choice == "6":
+            _print_fit_wrapped("可选高级入口：输入 JSON object；保留字段会被 Provider 合同过滤。留空不修改。", width=width, max_lines=3)
+            raw = _prompt_line("› JSON: ").strip()
+            if not raw:
+                _print_setting_unchanged("高级 JSON 未修改。", width=width)
+                continue
+            try:
+                parsed = json.loads(raw)
+                if not isinstance(parsed, dict):
+                    raise ValueError("必须是 JSON object")
+            except (json.JSONDecodeError, ValueError) as exc:
+                _print_setting_rejected(f"JSON 无效：{exc}", width=width)
+                continue
+            _save_config_value(current, {f"{prefix}_PARAMS_JSON": json.dumps(parsed, ensure_ascii=False, separators=(",", ":"))})
+            _print_setting_saved("高级 JSON", "已写入", width=width)
+            continue
+        if choice == "7":
+            _save_config_value(current, {f"{prefix}_PARAMS_JSON": "{}"})
+            _print_setting_saved("高级参数", "已恢复当前场景预设", width=width)
+            continue
+        if choice == "0" or not choice:
+            return
+        _print_setting_rejected("无效输入。", width=width)
 
 
 def _choose_role_ttl_hours(current: ProjectLingConfig) -> int | None:
@@ -2201,10 +2722,13 @@ def _render_command_help() -> None:
         ("/model", "打开协作模式菜单（兼容旧入口）", "模式菜单"),
         ("/send", "直接发送消息给执行星", "发给执行星"),
         ("/settings", "打开中文设置中心", "设置"),
-        ("/settings api", "服务商 / Key / 中转站 / 双星模型", "API 和模型"),
+        ("/settings api", "拆分配置主星 / 执行星 Provider、Key、模型和预设", "双星 API"),
+        ("/settings main", "直达主星 API 配置", "主星 API"),
+        ("/settings executor", "直达执行星 API 配置", "执行星 API"),
         ("/settings websearch", "搜索 Key / 地址 / 测试", "搜索设置"),
-        ("/models", "拉取当前服务商模型列表", "模型列表"),
-        ("/api-test", "测试主星/辅星连通", "连通测试"),
+        ("/status", "查看双星、角色和连接状态", "状态"),
+        ("/models", "拉取主星模型列表；可用 --slot executor", "模型列表"),
+        ("/api-test", "跨 Provider 并行测试主星/执行星", "双星连通"),
         ("/codexurl", "打开 codexurl", "codexurl"),
         ("/help", "显示帮助", "帮助"),
         ("./run.sh cleanup", "清理日志/临时包；--deep 同时清 bytecode", "清理日志"),
@@ -2232,55 +2756,68 @@ def _render_settings_root(current: ProjectLingConfig) -> None:
     print("")
     _print_fit("设置中心", width=width)
     mode_label = _collab_mode_detail(current.collab_mode, current).split(" · ")[0]
-    _print_setting_pair("当前", f"{_provider_label(current)} · {mode_label}", width=width)
-    _print_setting_pair("主星", planner_model, width=width)
-    _print_setting_pair("执行", executor_model, width=width)
+    _print_setting_pair("协同", mode_label, width=width)
+    _print_setting_pair("主星", f"{_provider_label(current.main_api)} / {planner_model}", width=width)
+    _print_setting_pair("执行星", f"{_provider_label(current.executor_api)} / {executor_model}", width=width)
     _print_setting_section("设置", width=width)
-    _print_setting_option(1, "API 与模型", width=width)
-    _print_setting_option(2, "搜索", width=width)
-    _print_setting_option(3, "系统", width=width)
+    _print_setting_option(1, "主星 API 配置", width=width)
+    _print_setting_option(2, "执行星 API 配置", width=width)
+    _print_setting_option(3, "搜索", width=width)
+    _print_setting_option(4, "系统", width=width)
     _print_setting_option(0, "返回", width=width)
 
 
-def _render_api_settings(current: ProjectLingConfig) -> None:
-    max_tokens_text = str(current.max_tokens) if current.max_tokens is not None else "自动"
-    provider = _api_provider_value(getattr(current, "api_provider", ""))
-    planner_model, executor_model = _collab_mode_models(current.collab_mode, current)
+def _parameter_profile_label(profile: str) -> str:
+    normalized = _parameter_profile_value(profile)
+    return next((label for value, label, _desc in STAR_PARAMETER_PROFILE_CHOICES if value == normalized), normalized)
+
+
+def _star_parameter_summary(star: StarAPIConfig) -> str:
+    params = star.parameters
+    parts = [_parameter_profile_label(star.parameter_profile)]
+    effort = str(params.get("reasoning_effort") or "").strip()
+    if effort:
+        parts.append(f"推理 {effort}")
+    if isinstance(params.get("temperature"), (int, float)):
+        parts.append(f"温度 {params['temperature']:g}")
+    if isinstance(params.get("top_p"), (int, float)):
+        parts.append(f"top_p {params['top_p']:g}")
+    if isinstance(params.get("top_k"), int):
+        parts.append(f"top_k {params['top_k']}")
+    return " · ".join(parts)
+
+
+def _render_api_settings(current: ProjectLingConfig, slot: str = "main") -> None:
+    normalized_slot = "executor" if str(slot or "").strip().lower() == "executor" else "main"
+    star = current.executor_api if normalized_slot == "executor" else current.main_api
+    label = STAR_SLOT_LABELS[normalized_slot]
     width = _compact_render_width()
-    top_p_text = current.gemini_top_p if current.gemini_top_p is not None else "自动"
-    top_k_text = current.gemini_top_k if current.gemini_top_k is not None else "自动"
-    if width < 24:
-        gemini_param_summary = "自动" if top_p_text == "自动" and top_k_text == "自动" else f"p={top_p_text} k={top_k_text}"
-    else:
-        gemini_param_summary = f"top_p={top_p_text} / top_k={top_k_text}"
     print("")
-    _print_fit("API 与模型", width=width)
-    _print_setting_pair("当前", _provider_label(current), width=width)
-    _print_setting_pair("主星", planner_model, width=width)
-    _print_setting_pair("执行", executor_model, width=width)
+    _print_fit(f"{label} API 配置", width=width)
+    _print_setting_pair("Provider", _provider_label(star), width=width)
+    _print_setting_pair("模型", star.model, width=width)
+    _print_setting_pair("参数", _star_parameter_summary(star), width=width)
 
     _print_setting_section("连接", width=width)
-    _print_setting_option(1, "服务商", _provider_label(current), width=width)
-    _print_setting_option(2, "密钥", "已设置" if current.api_key else "未设置", width=width)
-    _print_setting_option(3, "地址", current.base_url, width=width)
-    _print_setting_option(6, "模型列表", width=width)
-    _print_setting_option(7, "连通测试", width=width)
+    _print_setting_option(1, "Provider", _provider_label(star), width=width)
+    key_detail = "未设置" if not star.api_key else "本星独立" if star.key_source == "slot" else "继承 Provider"
+    _print_setting_option(2, "API Key", key_detail, width=width)
+    _print_setting_option(3, "API 地址", star.base_url, width=width)
+    _print_setting_option(7, "模型列表", width=width)
+    _print_setting_option(8, "连通测试", width=width)
 
     _print_setting_section("模型", width=width)
-    _print_setting_option(4, "主星模型", planner_model, width=width)
-    _print_setting_option(5, "执行模型", executor_model, width=width)
+    _print_setting_option(4, f"{label}模型", star.model, width=width)
 
     _print_setting_section("生成", width=width)
-    _print_setting_option(8, "流式", _bool_label(current.enable_sse), width=width)
-    _print_setting_option(9, "输出上限", max_tokens_text, width=width)
-    _print_setting_option(10, "温度", f"{current.temperature:g}", width=width)
-    _print_setting_option(13, "推理", current.gemini_reasoning_effort if provider == "gemini" else current.reasoning_effort, width=width)
-    if provider == "gemini":
-        _print_setting_option(14, "更多参数", gemini_param_summary, width=width)
+    _print_setting_option(5, "场景预设", _parameter_profile_label(star.parameter_profile), width=width)
+    _print_setting_option(6, "高级参数", _star_parameter_summary(star), width=width)
+    _print_setting_option(9, "流式", _bool_label(star.enable_sse), width=width)
 
     _print_setting_section("运行", width=width)
-    _print_setting_option(11, "超时", f"{current.timeout_seconds:g} 秒", width=width)
-    _print_setting_option(12, "重试", current.retry_count, width=width)
+    _print_setting_option(10, "超时", f"{star.timeout_seconds:g} 秒", width=width)
+    _print_setting_option(11, "重试", star.retry_count, width=width)
+    _print_setting_option(12, "清除本星覆盖", "改为继承 Provider", width=width)
     _print_setting_option(0, "返回", width=width)
 
 
@@ -2460,8 +2997,11 @@ def _run_persona_settings_ui(config: ProjectLingConfig | None = None) -> int:
             if picked is None:
                 print("未选择角色。")
                 continue
+            swapped = bundle.liaison is not None and picked.name_en.casefold() == bundle.liaison.name_en.casefold()
             select_current_role_by_name(picked.name_en, current)
             print(f"已选择主星：{picked.name_zh} / {picked.name_en}")
+            if swapped:
+                print(f"双星已换位：执行星为 {active_role.name_zh} / {active_role.name_en}")
             current = load_config()
             continue
 
@@ -2544,6 +3084,44 @@ def _begin_route_status(printer: ShellStreamPrinter, route: dict[str, Any]) -> b
     return True
 
 
+def _result_response_was_streamed(result: ChatResult) -> bool:
+    return bool(
+        isinstance(result.raw_response, dict)
+        and result.raw_response.get("_projectling_streamed")
+    )
+
+
+def _ensure_result_text_rendered(printer: ShellStreamPrinter, result: ChatResult) -> bool:
+    text = str(result.text or "").strip()
+    if not text:
+        return False
+    if _result_response_was_streamed(result) and printer.assistant_content_seen:
+        return False
+    printer.emit_message(text)
+    return True
+
+
+def _finish_reason_notice(finish_reason: str | None) -> str:
+    reason = str(finish_reason or "").strip().lower()
+    if reason in {"length", "max_tokens", "max_output_tokens"}:
+        return "模型已达到当前输出长度上限，正文可能尚未完整；可在对应星位 Settings 提高输出长度后继续。"
+    if reason == "stream_limit":
+        return "本地流式保护已停止本轮剩余输出；已保留收到的正文，请缩小单次输出或提高对应星位输出长度后继续。"
+    if reason in {"content_filter", "content_filtered", "safety"}:
+        return "服务商提前过滤了本轮剩余内容，当前显示可能不完整。"
+    return ""
+
+
+def _emit_finish_reason_notice(printer: ShellStreamPrinter, result: ChatResult) -> bool:
+    notice = _finish_reason_notice(result.finish_reason)
+    if not notice:
+        return False
+    if str(result.finish_reason or "").strip().lower() == "stream_limit" and printer.stream_limit_notified:
+        return False
+    printer.emit_plain_block(_style_tool_line(f"  {notice}", ANSI_SOFT_RED, bold=True), trailing_blank=True)
+    return True
+
+
 def _run_role_chat(
     config: ProjectLingConfig,
     role: LauncherRole,
@@ -2589,6 +3167,8 @@ def _run_role_chat(
             printer.emit_message(f"运行失败：{exc}")
             printer.finish("")
             return 1
+        _ensure_result_text_rendered(printer, result)
+        _emit_finish_reason_notice(printer, result)
         if not result.text and not result.tool_traces:
             if result.finish_reason == "stream_limit":
                 printer.finish("本轮输出已达到上限。")
@@ -2648,6 +3228,9 @@ def _run_role_chat(
         print(receipts)
     else:
         print(_render_assistant_block(result.text, role=result.role, persona_bundle=display_bundle))
+    finish_notice = _finish_reason_notice(result.finish_reason)
+    if finish_notice:
+        print(finish_notice)
     return 0
 
 def _api_test_messages() -> list[dict[str, str]]:
@@ -2657,25 +3240,21 @@ def _api_test_messages() -> list[dict[str, str]]:
     ]
 
 
-def _api_test_diagnostic_config(config: ProjectLingConfig, model: str) -> tuple[ProjectLingConfig, str]:
-    provider = _api_provider_value(getattr(config, "api_provider", ""))
+def _api_test_diagnostic_star(star: StarAPIConfig, model: str) -> tuple[StarAPIConfig, str]:
+    provider = _api_provider_value(star.provider)
     normalized_model = str(model or "").strip().lower()
     if provider != "gemini" or not normalized_model.startswith("gemini-3") or "pro" not in normalized_model:
-        return config, "disabled"
+        return star, "disabled"
 
-    raw_extra = str(getattr(config, "gemini_extra_body_json", "") or "").strip()
-    try:
-        extra_body = json.loads(raw_extra) if raw_extra else {}
-    except json.JSONDecodeError:
-        extra_body = {}
-    if not isinstance(extra_body, dict):
-        extra_body = {}
+    parameters = json.loads(json.dumps(star.parameters, ensure_ascii=False))
+    extra_body = parameters.get("extra_body") if isinstance(parameters.get("extra_body"), dict) else {}
     google = extra_body.setdefault("google", {})
     if not isinstance(google, dict):
         google = {}
         extra_body["google"] = google
     google["thinking_config"] = {"thinking_level": "minimal"}
-    return replace(config, gemini_extra_body_json=json.dumps(extra_body, ensure_ascii=False)), "minimal"
+    parameters["extra_body"] = extra_body
+    return replace(star, parameters=parameters), "minimal"
 
 
 def _api_test_one_model(
@@ -2690,6 +3269,11 @@ def _api_test_one_model(
 ) -> dict[str, Any]:
     started = time.time()
     safety = _api_test_model_safety(model)
+    provider_method = getattr(client, "provider", None)
+    client_provider = str(provider_method() if callable(provider_method) else _api_provider_value(getattr(getattr(client, "config", None), "api_provider", "")))
+    client_star = getattr(client, "star_config", None)
+    client_slot = str(getattr(client_star, "slot", role if role in {"main", "executor"} else "planner"))
+    client_profile = str(getattr(client_star, "parameter_profile", "legacy"))
     try:
         preview = ""
         if stream:
@@ -2726,6 +3310,9 @@ def _api_test_one_model(
             "label": label,
             "ok": True,
             "model": model,
+            "provider": client_provider,
+            "slot": client_slot,
+            "parameter_profile": client_profile,
             "tags": safety.get("tags", []),
             "risk": safety.get("risk", "normal"),
             "hint": safety.get("hint", ""),
@@ -2740,6 +3327,9 @@ def _api_test_one_model(
             "label": label,
             "ok": False,
             "model": model,
+            "provider": client_provider,
+            "slot": client_slot,
+            "parameter_profile": client_profile,
             "tags": safety.get("tags", []),
             "risk": safety.get("risk", "normal"),
             "hint": safety.get("hint", ""),
@@ -2770,50 +3360,58 @@ def _build_api_test_payload(
     *,
     override_model: str = "",
     force_no_stream: bool = False,
+    slot: str = "both",
 ) -> dict[str, Any]:
     planner_model, executor_model = _collab_mode_models(config.collab_mode, config)
     planner_model = str(planner_model or "").strip()
     executor_model = str(executor_model or "").strip()
     override_model = str(override_model or "").strip()
-    stream = bool(config.enable_sse and not force_no_stream)
+    normalized_slot = str(slot or "both").strip().lower()
+    if normalized_slot not in {"main", "executor", "both"}:
+        normalized_slot = "both"
     started = time.time()
 
     if override_model:
-        executor_model = override_model
+        target_slot = "main" if normalized_slot == "main" else "executor"
+        target_star = config.main_api if target_slot == "main" else config.executor_api
         targets = [
             (
-                "executor",
-                "辅星",
-                executor_model,
+                "planner" if target_slot == "main" else "executor",
+                STAR_SLOT_LABELS[target_slot],
+                target_star,
+                override_model,
                 False,
             )
         ]
     else:
-        targets = [
+        all_targets = [
             (
                 "planner",
                 "主星",
+                config.main_api,
                 planner_model,
                 False,
             ),
             (
                 "executor",
-                "辅星",
+                "执行星",
+                config.executor_api,
                 executor_model,
                 False,
             ),
         ]
+        targets = [target for target in all_targets if normalized_slot == "both" or target[2].slot == normalized_slot]
 
-    def run_target(target: tuple[str, str, str, bool]) -> dict[str, Any]:
-        role, label, model, thinking_enabled = target
-        diagnostic_config, thinking_mode = _api_test_diagnostic_config(config, model)
+    def run_target(target: tuple[str, str, StarAPIConfig, str, bool]) -> dict[str, Any]:
+        role, label, star, model, thinking_enabled = target
+        diagnostic_star, thinking_mode = _api_test_diagnostic_star(star, model)
         return _api_test_one_model(
-            DeepSeekClient(diagnostic_config),
+            _client_for_star(config, diagnostic_star),
             role=role,
             label=label,
             model=model,
             thinking_enabled=thinking_enabled,
-            stream=stream,
+            stream=bool(star.enable_sse and not force_no_stream),
             thinking_mode=thinking_mode,
         )
 
@@ -2825,10 +3423,15 @@ def _build_api_test_payload(
     planner_result = _api_test_result_by_role(results, "planner")
     executor_result = _api_test_result_by_role(results, "executor")
     executor_safety = _api_test_model_safety(executor_model)
+    target_stars = [target[2] for target in targets]
+    target_providers = list(dict.fromkeys(star.provider for star in target_stars))
+    target_base_urls = list(dict.fromkeys(star.base_url for star in target_stars))
     payload = {
         "ok": all(bool(result.get("ok")) for result in results),
-        "provider": _api_provider_value(getattr(config, "api_provider", "")),
-        "base_url": config.base_url,
+        "provider": "+".join(target_providers),
+        "main_provider": config.main_api.provider,
+        "executor_provider": config.executor_api.provider,
+        "base_url": target_base_urls[0] if len(target_base_urls) == 1 else "multiple",
         "collab_mode": config.collab_mode,
         "planner_model": planner_model,
         "executor_model": executor_model,
@@ -2840,7 +3443,10 @@ def _build_api_test_payload(
         "executor_tags": executor_result.get("tags", executor_safety.get("tags", [])),
         "executor_risk": executor_result.get("risk", executor_safety.get("risk", "normal")),
         "executor_hint": executor_result.get("hint", executor_safety.get("hint", "")),
-        "stream": stream,
+        "stream": any(bool(target[2].enable_sse and not force_no_stream) for target in targets),
+        "slot": normalized_slot,
+        "override_model": override_model,
+        "override_target_slot": targets[0][2].slot if override_model else "",
         "elapsed_seconds": round(time.time() - started, 3),
         "results": results,
     }
@@ -2896,16 +3502,19 @@ def _print_api_test_payload(payload: dict[str, Any], *, width: int | None = None
         _print_next_action_check(["API Key", "Base URL", "模型名", "网络"], width=render_width)
 
 
-def _run_api_test(config: ProjectLingConfig) -> None:
+def _run_api_test(config: ProjectLingConfig, *, slot: str = "both") -> None:
     width = _compact_render_width()
     print("")
-    _print_fit(f"API TEST · {_provider_label(config)}", width=width)
-    if not config.api_key:
+    normalized_slot = "executor" if str(slot or "").strip().lower() == "executor" else "main" if str(slot or "").strip().lower() == "main" else "both"
+    stars = [config.main_api, config.executor_api] if normalized_slot == "both" else [_star_for_slot(config, normalized_slot)]
+    title = "双星" if normalized_slot == "both" else STAR_SLOT_LABELS[normalized_slot]
+    _print_fit(f"API TEST · {title}", width=width)
+    if not all(star.api_key for star in stars):
         _print_fit("未设置 API Key。", width=width)
-        _print_fit("下一步：先写入当前 Provider 的 API Key。", width=width)
+        _print_fit("下一步：先在对应星位写入 API Key。", width=width)
         return
 
-    payload = _build_api_test_payload(config)
+    payload = _build_api_test_payload(config, slot=normalized_slot)
     _print_api_test_payload(payload, width=width)
 
 
@@ -2930,17 +3539,19 @@ def _extract_model_ids(payload: dict[str, Any]) -> list[str]:
     return ids
 
 
-def _run_model_list(config: ProjectLingConfig, *, limit: int = 40) -> None:
+def _run_model_list(config: ProjectLingConfig, *, slot: str = "main", limit: int = 40) -> None:
+    normalized_slot = "executor" if str(slot or "").strip().lower() == "executor" else "main"
+    star = _star_for_slot(config, normalized_slot)
     width = _compact_render_width()
     print("")
-    list_title = f"MODEL LIST · {_provider_label(config)}"
-    _print_fit(list_title if _display_width(list_title) <= width else f"Models · {_provider_label(config)}", width=width)
-    if not config.api_key:
+    list_title = f"MODEL LIST · {STAR_SLOT_LABELS[normalized_slot]} · {_provider_label(star)}"
+    _print_fit(list_title if _display_width(list_title) <= width else f"Models · {_provider_label(star)}", width=width)
+    if not star.api_key:
         _print_fit("未设置 API Key。", width=width)
-        _print_fit("下一步：先写入当前 Provider 的 API Key。", width=width)
+        _print_fit("下一步：先写入当前星位的 API Key。", width=width)
         return
     try:
-        payload = DeepSeekClient(config).list_models()
+        payload = _client_for_star(config, star).list_models()
     except Exception as exc:
         _print_fit("模型列表拉取失败。", width=width)
         _print_fit_wrapped(exc, width=width)
@@ -3112,14 +3723,15 @@ def _toggle_config_value(config: ProjectLingConfig, key: str, current: bool, lab
 
 def _bootstrap_missing_key(config: ProjectLingConfig) -> ProjectLingConfig | None:
     role, _seed = resolve_current_role(config)
-    print(_render_assistant_block("尚未配置 API Key。", role=role))
-    key = _prompt_line("  输入 API Key，直接回车跳过 > ").strip()
+    provider_label = _provider_label(config.main_api)
+    print(_render_assistant_block(f"主星尚未配置 {provider_label} API Key。", role=role))
+    key = _prompt_secret_line(f"  输入 {provider_label} API Key（输入隐藏），直接回车跳过 > ").strip()
     if not key:
         print("  已跳过配置。输入 /settings 继续设置。\n")
         return None
 
-    updated = _save_config_value(config, {"DEEPSEEK_API_KEY": key})
-    print("基础设置已写入。\n")
+    updated = _save_config_value(config, {_provider_key_env_name(config.main_api.provider): key})
+    print("主星 Provider Key 已写入。可在 /settings executor 单独配置执行星。\n")
     return updated
 
 
@@ -3175,6 +3787,7 @@ class ShellStreamPrinter:
         self.pending_tool_receipts: list[dict[str, Any]] = []
         self.markdown_pending = ""
         self.assistant_content_seen = False
+        self.stream_limit_notified = False
         self.can_control = _supports_tty_control()
         self.typewriter_enabled = bool(self.typing.get("enabled", True) and sys.stdout.isatty())
         self.renderer = MarkdownAnsiRenderer(tty=self.can_control)
@@ -3740,6 +4353,7 @@ class ShellStreamPrinter:
             if bool(payload.get("soft")):
                 self.show_status("thinking")
                 return
+            self.stream_limit_notified = True
             self._clear_live_reasoning()
             self.reasoning_buffer = []
             self.reasoning_started_at = None
@@ -4154,6 +4768,7 @@ def _tool_actor_text(payload: dict[str, Any], *, width: int = 42) -> str:
     label = str(payload.get("actor_label") or "").strip()
     name = str(payload.get("actor_name") or "").strip()
     actor_kind = str(payload.get("actor_kind") or "").strip().lower()
+    label = label.replace("主角色", "主星").replace("辅导位", "执行星").replace("执行位", "执行星")
     if actor_kind == "executor" and not label:
         label = "执行星"
     elif actor_kind == "planner" and not label:
@@ -4899,7 +5514,7 @@ def _tool_actor_signal_line(payload: dict[str, Any]) -> str:
         label = "执行星"
     elif actor_kind == "planner":
         label = "主星"
-    label = label.replace("主角色", "主星").replace("执行位", "执行星") or ("执行星" if actor_kind == "executor" else "主星")
+    label = label.replace("主角色", "主星").replace("辅导位", "执行星").replace("执行位", "执行星") or ("执行星" if actor_kind == "executor" else "主星")
     value = _normalize_identity_name(name) or label
     context_percent = payload.get("context_budget_percent") or payload.get("context_percent")
     if context_percent is not None and context_percent != "":
@@ -6041,10 +6656,7 @@ def dispatch_shell_input(
         printer.finish("")
         return 1
 
-    streamed_response = bool(
-        isinstance(result.raw_response, dict)
-        and result.raw_response.get("_projectling_streamed")
-    )
+    streamed_response = _result_response_was_streamed(result)
     for trace in result.thinking_traces:
         if not isinstance(trace, dict):
             continue
@@ -6072,6 +6684,9 @@ def dispatch_shell_input(
             printer.emit_plain_block(frontend_receipts, trailing_blank=bool(result.text))
         if result.text:
             printer.emit_message(result.text)
+    else:
+        _ensure_result_text_rendered(printer, result)
+    _emit_finish_reason_notice(printer, result)
     if result.finish_reason == "stream_limit" and not result.text and not result.tool_traces:
         printer.finish("本轮输出已达到上限。")
     else:
@@ -6079,181 +6694,193 @@ def dispatch_shell_input(
     return 0
 
 
-def _settings_provider_view(config: ProjectLingConfig, provider: str | None) -> ProjectLingConfig:
-    normalized = _api_provider_value(provider or getattr(config, "api_provider", ""))
-    if normalized == _api_provider_value(getattr(config, "api_provider", "")):
-        return config
-    if normalized == "gemini":
-        return replace(
-            config,
-            api_provider="gemini",
-            api_key=config.gemini_api_key,
-            base_url=config.gemini_base_url,
-            model=config.gemini_executor_model,
-        )
-    return replace(
-        config,
-        api_provider="deepseek",
-        api_key=config.deepseek_api_key,
-        base_url=config.deepseek_base_url,
-        model=config.deepseek_executor_model,
-    )
+def _provider_key_env_name(provider: str) -> str:
+    return {
+        "gpt": "GPT_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+        "grok": "GROK_API_KEY",
+        "deepseek": "DEEPSEEK_API_KEY",
+    }[_api_provider_value(provider)]
 
 
-def _run_api_settings_ui(provider_override: str | None = None) -> int:
+def _run_api_slot_picker_ui() -> int:
     while True:
-        current = _settings_provider_view(load_config(), provider_override)
-        _render_api_settings(current)
+        current = load_config()
+        width = _compact_render_width()
+        print("")
+        _print_fit("双星 API 配置", width=width)
+        _print_fit_wrapped(
+            "请先选择星位：主星与执行星（辅星）各自保存 Provider、Key、模型和参数；切换星位会切换配置对象，不会覆盖另一颗星。",
+            width=width,
+            max_lines=4,
+        )
+        _print_setting_option(1, "主星 API 配置", f"{_provider_label(current.main_api)} / {current.main_api.model}", width=width)
+        _print_setting_option(2, "执行星 API 配置", f"{_provider_label(current.executor_api)} / {current.executor_api.model}", width=width)
+        _print_setting_option(3, "双星连通测试", f"{current.main_api.provider} + {current.executor_api.provider}", width=width)
+        _print_setting_option(0, "返回", width=width)
+        choice = _prompt_menu_choice("0 返回上级")
+        if choice == "1":
+            _run_api_settings_ui("main")
+            continue
+        if choice == "2":
+            _run_api_settings_ui("executor")
+            continue
+        if choice == "3":
+            _run_api_test(current, slot="both")
+            continue
+        if choice == "0" or not choice:
+            return 0
+        _print_setting_rejected("无效输入。", width=width)
+
+
+def _run_api_settings_ui(slot: str = "main", provider_override: str | None = None) -> int:
+    normalized_slot = "executor" if str(slot or "").strip().lower() == "executor" else "main"
+    role = "executor" if normalized_slot == "executor" else "planner"
+    prefix = _star_env_prefix(normalized_slot)
+    while True:
+        current = load_config()
+        star = _star_for_slot(current, normalized_slot)
+        _render_api_settings(current, normalized_slot)
+        if provider_override and _api_provider_value(provider_override) != star.provider:
+            _print_fit(f"提示：当前{STAR_SLOT_LABELS[normalized_slot]}使用 {_provider_label(star)}；可在选项 1 切换到 {_provider_label_value(provider_override)}。")
         choice = _prompt_menu_choice("0 返回上级")
 
         if choice == "1":
-            provider = _choose_provider_interactive(current)
+            provider = _choose_provider_interactive(current, star)
             if provider is None:
-                _print_setting_unchanged("服务商未修改。")
+                _print_setting_unchanged("Provider 未修改。")
                 continue
-            _save_config_value(current, {"PROJECTLING_API_PROVIDER": provider})
-            _print_setting_saved("服务商", _provider_label(load_config()))
+            updates: dict[str, str | None] = {
+                f"{prefix}_PROVIDER": provider,
+                f"{prefix}_API_KEY": None,
+                f"{prefix}_BASE_URL": None,
+                f"{prefix}_MODEL": None,
+                f"{prefix}_PARAMETER_PROFILE": "default",
+                f"{prefix}_PARAMS_JSON": "{}",
+            }
+            if normalized_slot == "main":
+                updates["PROJECTLING_API_PROVIDER"] = provider
+            _save_config_value(current, updates)
+            changed = _star_for_slot(load_config(), normalized_slot)
+            _print_setting_saved("Provider", _provider_label(changed))
+            _print_fit("Provider 已改变：本星独立 Key、地址、模型和高级参数已安全重置；Provider 共享 Key 仍会继承。")
             continue
 
         if choice == "2":
             print("")
-            provider = _api_provider_value(getattr(current, "api_provider", ""))
-            key_name = "GEMINI_API_KEY" if provider == "gemini" else "DEEPSEEK_API_KEY"
-            key = _prompt_line(f"输入 {key_name}，留空保持原样 > ").strip()
-            if key:
-                _save_config_value(current, {key_name: key})
-                _print_setting_saved("API Key", "已写入")
-            else:
-                _print_setting_unchanged("API Key 未修改。")
+            _print_fit(f"{STAR_SLOT_LABELS[normalized_slot]} Key 来源", width=_compact_render_width())
+            _print_setting_option(1, "写入本星独立 Key", "只影响这一颗星")
+            _print_setting_option(2, "继承 Provider Key", _provider_key_env_name(star.provider))
+            _print_setting_option(3, "写入 Provider 共享 Key", "同 Provider 星位可复用")
+            _print_setting_option(0, "取消")
+            key_choice = _prompt_menu_choice("空输入取消")
+            if key_choice == "1":
+                key = _prompt_secret_line("输入本星 API Key（输入隐藏），留空取消 > ").strip()
+                if key:
+                    _save_config_value(current, {f"{prefix}_API_KEY": key})
+                    _print_setting_saved("API Key", "本星独立 Key 已写入")
+                else:
+                    _print_setting_unchanged("API Key 未修改。")
+            elif key_choice == "2":
+                _save_config_value(current, {f"{prefix}_API_KEY": None})
+                _print_setting_saved("API Key", f"改为继承 {_provider_key_env_name(star.provider)}")
+            elif key_choice == "3":
+                key = _prompt_secret_line(f"输入 {_provider_key_env_name(star.provider)}（输入隐藏），留空取消 > ").strip()
+                if key:
+                    _save_config_value(current, {_provider_key_env_name(star.provider): key, f"{prefix}_API_KEY": None})
+                    _print_setting_saved("API Key", "Provider 共享 Key 已写入")
+                else:
+                    _print_setting_unchanged("API Key 未修改。")
             continue
 
         if choice == "3":
-            provider = _api_provider_value(getattr(current, "api_provider", ""))
-            key_name = "GEMINI_BASE_URL" if provider == "gemini" else "DEEPSEEK_BASE_URL"
-            base_url = _choose_base_url_interactive(current)
+            base_url = _choose_base_url_interactive(current, star)
             if base_url is not None:
-                _save_config_value(current, {key_name: base_url})
-                _print_setting_saved("中转站", base_url)
+                _save_config_value(current, {f"{prefix}_BASE_URL": base_url})
+                _print_setting_saved("API 地址", base_url)
             else:
-                _print_setting_unchanged("中转站未修改。")
+                _print_setting_unchanged("API 地址未修改。")
             continue
 
         if choice == "4":
-            role = "planner"
             current_model = _configured_role_model(current, role)
             model = _pick_provider_model_interactive(current, role)
             if model:
                 _save_config_value(current, {_model_update_key(current, role): model})
-                _print_setting_saved("主星模型", model)
-                _print_model_role_safety_hint(model, "主星")
+                _print_setting_saved(f"{STAR_SLOT_LABELS[normalized_slot]}模型", model)
+                _print_model_role_safety_hint(model, STAR_SLOT_LABELS[normalized_slot])
             else:
-                _print_setting_unchanged(f"主星模型保留 {current_model}。")
+                _print_setting_unchanged(f"模型保留 {current_model}。")
             continue
 
         if choice == "5":
-            role = "executor"
-            current_model = _configured_role_model(current, role)
-            model = _pick_provider_model_interactive(current, role)
-            if model:
-                _save_config_value(current, {_model_update_key(current, role): model})
-                _print_setting_saved("辅星模型", model)
-                _print_model_role_safety_hint(model, "辅星")
+            profile = _choose_parameter_profile_interactive(star)
+            if profile:
+                _save_config_value(
+                    current,
+                    {
+                        f"{prefix}_PARAMETER_PROFILE": profile,
+                        f"{prefix}_PARAMS_JSON": "{}",
+                    },
+                )
+                _print_setting_saved("场景预设", _parameter_profile_label(profile))
+                _print_fit("旧的高级参数覆盖已清除；当前预设会完整生效。")
             else:
-                _print_setting_unchanged(f"辅星模型保留 {current_model}。")
+                _print_setting_unchanged("场景预设未修改。")
             continue
 
         if choice == "6":
-            _run_model_list(current)
+            _run_star_advanced_params_settings_ui(normalized_slot)
             continue
 
         if choice == "7":
-            _run_api_test(current)
+            _run_model_list(current, slot=normalized_slot)
             continue
 
         if choice == "8":
-            print("")
-            _toggle_config_value(
-                current,
-                "DEEPSEEK_ENABLE_SSE",
-                current.enable_sse,
-                "SSE",
-            )
+            _run_api_test(current, slot=normalized_slot)
             continue
 
         if choice == "9":
-            print("")
-            max_tokens = _prompt_int("输入 Max Tokens > ", min_value=1, allow_empty_clear=True)
-            key_name = "GEMINI_MAX_TOKENS" if _api_provider_value(getattr(current, "api_provider", "")) == "gemini" else "DEEPSEEK_MAX_TOKENS"
-            if max_tokens == "":
-                _save_config_value(current, {key_name: None})
-                _print_setting_cleared("Max Tokens")
-            elif isinstance(max_tokens, int):
-                _save_config_value(current, {key_name: str(max_tokens)})
-                _print_setting_saved("Max Tokens", max_tokens)
+            _save_config_value(current, {f"{prefix}_ENABLE_SSE": "0" if star.enable_sse else "1"})
+            _print_setting_saved("流式", _bool_label(not star.enable_sse))
             continue
 
         if choice == "10":
-            print("")
-            temperature = _prompt_float("输入 Temperature (0.0 - 2.0) > ", min_value=0.0, max_value=2.0)
-            if temperature is not None:
-                key_name = "GEMINI_TEMPERATURE" if _api_provider_value(getattr(current, "api_provider", "")) == "gemini" else "DEEPSEEK_TEMPERATURE"
-                _save_config_value(current, {key_name: f"{temperature:g}"})
-                _print_setting_saved("Temperature", f"{temperature:g}")
+            selected, value = _choose_indexed_value(
+                "选择 API 超时",
+                [("30 秒", 30), ("60 秒", 60), ("180 秒", 180), ("300 秒", 300), ("600 秒", 600)],
+                current=int(star.timeout_seconds),
+            )
+            if selected:
+                _save_config_value(current, {f"{prefix}_TIMEOUT_SECONDS": str(value)})
+                _print_setting_saved("超时", f"{value}s")
             continue
 
         if choice == "11":
-            print("")
-            _print_fit_wrapped("API 超时默认 180s；SSE 会自动放宽读超时。")
-            timeout_seconds = _prompt_float("输入 Timeout 秒数 > ", min_value=5.0, max_value=86400.0)
-            if timeout_seconds is not None:
-                _save_config_value(current, {"DEEPSEEK_TIMEOUT_SECONDS": f"{timeout_seconds:g}"})
-                _print_setting_saved("Timeout", f"{timeout_seconds:g}s")
+            selected, value = _choose_indexed_value(
+                "选择失败重试次数",
+                [("不重试", 0), ("1 次", 1), ("3 次", 3), ("5 次", 5), ("10 次", 10)],
+                current=star.retry_count,
+            )
+            if selected:
+                _save_config_value(current, {f"{prefix}_RETRY_COUNT": str(value)})
+                _print_setting_saved("重试", value)
             continue
 
         if choice == "12":
-            print("")
-            _print_fit_wrapped("失败会用同一上下文重试，不写入历史。最大 10 次。")
-            retries = _prompt_int("输入 Retry 次数 > ", min_value=0)
-            if isinstance(retries, int):
-                if retries > 10:
-                    _print_setting_rejected("Retry 最大 10 次。", keep_label="保留", keep_value=current.retry_count)
-                else:
-                    _save_config_value(current, {"DEEPSEEK_RETRY_COUNT": str(retries)})
-                    _print_setting_saved("Retry", retries)
-            continue
-
-        if choice == "13":
-            print("")
-            if _api_provider_value(getattr(current, "api_provider", "")) == "gemini":
-                raw_effort = _prompt_line("输入 Gemini Reasoning Effort (none/low/high) > ").strip().lower()
-                aliases = {"off": "none", "disabled": "none", "default": "high", "max": "high"}
-                effort = aliases.get(raw_effort, raw_effort)
-                if effort in {"none", "low", "high"}:
-                    _save_config_value(current, {"GEMINI_REASONING_EFFORT": effort})
-                    _print_setting_saved("Gemini Reasoning", effort)
-                elif not raw_effort:
-                    _print_setting_unchanged("Reasoning 未修改。")
-                else:
-                    _print_setting_rejected("选项 none low high。", keep_label="保留", keep_value=current.gemini_reasoning_effort)
-                continue
-            raw_effort = _prompt_line("输入 DeepSeek Reasoning Effort (high/max) > ").strip().lower()
-            aliases = {"xhigh": "max", "x-high": "max", "maximum": "max", "medium": "high", "low": "high"}
-            effort = aliases.get(raw_effort, raw_effort)
-            if effort in {"high", "max"}:
-                _save_config_value(current, {"DEEPSEEK_REASONING_EFFORT": effort})
-                _print_setting_saved("Reasoning Effort", effort)
-            elif not raw_effort:
-                _print_setting_unchanged("Reasoning 未修改。")
-            else:
-                _print_setting_rejected("选项 high max。", keep_label="保留", keep_value=current.reasoning_effort)
-            continue
-
-        if choice == "14":
-            _run_gemini_params_settings_ui()
-            continue
-
-        if choice == "15":
-            _run_websearch_settings_ui()
+            updates = {
+                f"{prefix}_API_KEY": None,
+                f"{prefix}_BASE_URL": None,
+                f"{prefix}_MODEL": None,
+                f"{prefix}_PARAMETER_PROFILE": "default",
+                f"{prefix}_PARAMS_JSON": "{}",
+                f"{prefix}_TIMEOUT_SECONDS": None,
+                f"{prefix}_RETRY_COUNT": None,
+                f"{prefix}_ENABLE_SSE": None,
+            }
+            _save_config_value(current, updates)
+            _print_setting_saved("本星覆盖", "已清除；改为 Provider 默认和场景预设")
             continue
 
         if choice == "0" or not choice:
@@ -6294,13 +6921,21 @@ def run_settings_ui(config: ProjectLingConfig | None = None, *, tab: str = "root
     _cleanup_legacy_runtime(config)
     normalized_tab = (tab or "root").strip().lower()
     if normalized_tab in {"gemini_params", "gemini-params"}:
-        return _run_gemini_params_settings_ui() or 0
+        return _run_star_advanced_params_settings_ui("main") or 0
+    if normalized_tab in {"gpt", "codex", "openai"}:
+        return _run_api_settings_ui("main", "gpt")
     if normalized_tab == "gemini":
-        return _run_api_settings_ui("gemini")
+        return _run_api_settings_ui("main", "gemini")
+    if normalized_tab in {"grok", "xai"}:
+        return _run_api_settings_ui("main", "grok")
     if normalized_tab == "deepseek":
-        return _run_api_settings_ui("deepseek")
+        return _run_api_settings_ui("main", "deepseek")
+    if normalized_tab in {"main", "main_api", "main-api", "planner"}:
+        return _run_api_settings_ui("main")
+    if normalized_tab in {"executor", "executor_api", "executor-api", "support"}:
+        return _run_api_settings_ui("executor")
     if normalized_tab == "api":
-        return _run_api_settings_ui()
+        return _run_api_slot_picker_ui()
     if normalized_tab in {"persona", "role"}:
         return _run_persona_settings_ui(config)
     if normalized_tab in {"system", "settings"}:
@@ -6314,14 +6949,18 @@ def run_settings_ui(config: ProjectLingConfig | None = None, *, tab: str = "root
         choice = _prompt_menu_choice("0 返回")
 
         if choice == "1":
-            _run_api_settings_ui()
+            _run_api_settings_ui("main")
             continue
 
         if choice == "2":
-            _run_websearch_settings_ui()
+            _run_api_settings_ui("executor")
             continue
 
         if choice == "3":
+            _run_websearch_settings_ui()
+            continue
+
+        if choice == "4":
             _run_system_settings_ui()
             continue
 
@@ -6337,28 +6976,32 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("doctor", help="print config and runtime status")
+    status = sub.add_parser("status", aliases=["/status"], help="print compact dual-star and role status")
+    status.add_argument("--json", action="store_true", help="print structured status")
     sub.add_parser("cleanup", help="clean runtime caches and temporary package archives")
     selftest = sub.add_parser("selftest", help="run offline release smoke tests")
     selftest.add_argument("--json", action="store_true", help="print structured selftest result")
     list_models = sub.add_parser(
         "list-models",
         aliases=["models", "model-list", "/models", "/model-list"],
-        help="list models from the active OpenAI-compatible provider",
+        help="list models from the selected star Provider",
     )
     list_models.add_argument("--json", action="store_true", help="print raw provider response")
     list_models.add_argument("--limit", type=int, default=80, help="max model ids to print")
     list_models.add_argument("--base-url", help="diagnostic override for this model-list request only")
     list_models.add_argument("--timeout", type=float, help="diagnostic timeout override in seconds")
+    list_models.add_argument("--slot", choices=("main", "executor"), default="main", help="star API to query")
     api_test = sub.add_parser(
         "api-test",
         aliases=["apitest", "/api-test", "/apitest"],
-        help="test main/support-star models on the active OpenAI-compatible provider",
+        help="test main/executor star APIs, including cross-Provider pairs",
     )
     api_test.add_argument("--json", action="store_true", help="print structured test result")
     api_test.add_argument("--no-stream", action="store_true", help="force non-streaming request")
-    api_test.add_argument("--model", help="diagnostic model override for this request only")
+    api_test.add_argument("--model", help="diagnostic model override; use --slot main|executor (both keeps the executor compatibility target)")
     api_test.add_argument("--base-url", help="diagnostic base URL override for this request only")
     api_test.add_argument("--timeout", type=float, help="diagnostic timeout override in seconds")
+    api_test.add_argument("--slot", choices=("main", "executor", "both"), default="both", help="star API target")
 
     chat = sub.add_parser("chat", help="send one message to the active provider")
     chat.add_argument("--message", required=True, help="user message")
@@ -6417,7 +7060,7 @@ def _build_parser() -> argparse.ArgumentParser:
     shell_settings.add_argument(
         "--tab",
         default="root",
-        choices=("root", "api", "deepseek", "gemini", "gemini_params", "gemini-params", "persona", "role", "system", "settings", "websearch", "web_search"),
+        choices=("root", "api", "main", "main_api", "main-api", "planner", "executor", "executor_api", "executor-api", "support", "gpt", "codex", "openai", "gemini", "grok", "xai", "deepseek", "gemini_params", "gemini-params", "persona", "role", "system", "settings", "websearch", "web_search"),
         help="open a settings section directly",
     )
     settings = sub.add_parser(
@@ -6429,7 +7072,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "tab",
         nargs="?",
         default="root",
-        choices=("root", "api", "deepseek", "gemini", "gemini_params", "gemini-params", "persona", "role", "system", "settings", "websearch", "web_search"),
+        choices=("root", "api", "main", "main_api", "main-api", "planner", "executor", "executor_api", "executor-api", "support", "gpt", "codex", "openai", "gemini", "grok", "xai", "deepseek", "gemini_params", "gemini-params", "persona", "role", "system", "settings", "websearch", "web_search"),
         help="settings section",
     )
 
@@ -6484,6 +7127,36 @@ def _cmd_doctor() -> int:
         "api_key_configured": bool(config.api_key),
         "api_provider": _api_provider_value(getattr(config, "api_provider", "")),
         "base_url": config.base_url,
+        "main_api": {
+            "slot": config.main_api.slot,
+            "provider": config.main_api.provider,
+            "api_key_configured": bool(config.main_api.api_key),
+            "key_source": config.main_api.key_source,
+            "base_url": config.main_api.base_url,
+            "model": config.main_api.model,
+            "parameter_profile": config.main_api.parameter_profile,
+            "parameters": config.main_api.parameters,
+            "timeout_seconds": config.main_api.timeout_seconds,
+            "retry_count": config.main_api.retry_count,
+            "enable_sse": config.main_api.enable_sse,
+        },
+        "executor_api": {
+            "slot": config.executor_api.slot,
+            "provider": config.executor_api.provider,
+            "api_key_configured": bool(config.executor_api.api_key),
+            "key_source": config.executor_api.key_source,
+            "base_url": config.executor_api.base_url,
+            "model": config.executor_api.model,
+            "parameter_profile": config.executor_api.parameter_profile,
+            "parameters": config.executor_api.parameters,
+            "timeout_seconds": config.executor_api.timeout_seconds,
+            "retry_count": config.executor_api.retry_count,
+            "enable_sse": config.executor_api.enable_sse,
+        },
+        "gpt_api_key_configured": bool(getattr(config, "gpt_api_key", None)),
+        "gpt_base_url": getattr(config, "gpt_base_url", ""),
+        "gpt_planner_model": getattr(config, "gpt_planner_model", ""),
+        "gpt_executor_model": getattr(config, "gpt_executor_model", ""),
         "deepseek_api_key_configured": bool(getattr(config, "deepseek_api_key", None)),
         "deepseek_base_url": getattr(config, "deepseek_base_url", ""),
         "deepseek_planner_model": getattr(config, "deepseek_planner_model", ""),
@@ -6496,6 +7169,10 @@ def _cmd_doctor() -> int:
         "gemini_top_k": getattr(config, "gemini_top_k", None),
         "gemini_candidate_count": getattr(config, "gemini_candidate_count", None),
         "gemini_reasoning_effort": getattr(config, "gemini_reasoning_effort", ""),
+        "grok_api_key_configured": bool(getattr(config, "grok_api_key", None)),
+        "grok_base_url": getattr(config, "grok_base_url", ""),
+        "grok_planner_model": getattr(config, "grok_planner_model", ""),
+        "grok_executor_model": getattr(config, "grok_executor_model", ""),
         "collab_mode": config.collab_mode,
         "planner_model": planner_model,
         "executor_model": executor_model,
@@ -6548,6 +7225,17 @@ def _cmd_doctor() -> int:
         ],
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_status(args: argparse.Namespace) -> int:
+    config = load_config()
+    _cleanup_legacy_runtime(config)
+    payload = _build_surface_status_payload(config)
+    if bool(getattr(args, "json", False)):
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        _render_surface_status(payload)
     return 0
 
 
@@ -6656,6 +7344,35 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
     if not _selftest_skip_missing_command(results, "projectling.zsh syntax", "zsh"):
         _selftest_run_command(results, "projectling.zsh syntax", ["zsh", "-n", "projectling.zsh"])
 
+    readiness_smoke = PROJECTLING_DIR / "tests" / "termux-readiness-smoke.py"
+    if readiness_smoke.is_file():
+        _selftest_run_command(results, "Termux readiness properties", [sys.executable, str(readiness_smoke)])
+    else:
+        _selftest_record(results, "Termux readiness properties", False, "required smoke file not present")
+
+    launcher_source_smoke = PROJECTLING_DIR / "tests" / "windows-launcher-source-smoke.py"
+    if launcher_source_smoke.is_file():
+        _selftest_run_command(results, "Windows launcher source pair", [sys.executable, str(launcher_source_smoke)])
+    else:
+        _selftest_record(results, "Windows launcher source pair", False, "required smoke file not present")
+
+    matrix_contract_smoke = PROJECTLING_DIR / "tests" / "aidebug-matrix-contract-smoke.py"
+    if matrix_contract_smoke.is_file():
+        _selftest_run_command(results, "AIDEBUG dynamic matrix contract", [sys.executable, str(matrix_contract_smoke)])
+    else:
+        _selftest_record(results, "AIDEBUG dynamic matrix contract", False, "required smoke file not present")
+
+    release_package_smoke = PROJECTLING_DIR / "tests" / "release-package-smoke.py"
+    if release_package_smoke.is_file():
+        _selftest_run_command(
+            results,
+            "Release package integrity",
+            [sys.executable, str(release_package_smoke)],
+            timeout=300,
+        )
+    else:
+        _selftest_record(results, "Release package integrity", False, "required smoke file not present")
+
     optional_shell_files = [
         PROJECTLING_DIR.parent / "Quickinstall" / "deploy" / "termux" / "motd.sh",
         PROJECTLING_DIR.parent / "Quickinstall" / "deploy" / "aitermux" / "bootstrap.sh",
@@ -6691,6 +7408,33 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
         )
         _selftest_record(results, "mode aliases", mode_ok, "1/2/3")
 
+        surface_payload = _build_surface_status_payload(config)
+        surface_serialized = json.dumps(surface_payload, ensure_ascii=False)
+        surface_line = _dualstar_surface_line(config)
+        surface_ok = (
+            surface_payload.get("provider") == provider
+            and surface_payload.get("planner_model") == planner_model
+            and surface_payload.get("executor_model") == executor_model
+            and bool((surface_payload.get("main_role") or {}).get("name_en"))
+            and "API_KEY" not in surface_serialized
+            and (not config.api_key or str(config.api_key) not in surface_serialized)
+            and "● " in surface_line
+            and (("主 " in surface_line and "执 " in surface_line) or "双星 " in surface_line)
+        )
+        _selftest_record(results, "dual-star status surface", surface_ok, surface_line)
+
+        with tempfile.TemporaryDirectory(prefix="projectling-mode-selftest-") as mode_tmp:
+            mode_path = Path(mode_tmp) / "env"
+            mode_config = replace(config, env_file_path=mode_path)
+            mode_engine = ProjectLingEngine(mode_config)
+            mode_context = ToolContext(cwd=Path(mode_tmp), home=Path(mode_tmp), config=mode_config)
+            invalid_mode = mode_engine._execute_model_mode_tool(
+                {"action": "set", "mode": "invalid-mode", "brief": "selftest"},
+                mode_context,
+            )
+            strict_mode_ok = invalid_mode.get("status") == "error" and not mode_path.exists()
+            _selftest_record(results, "mode invalid no mutation", strict_mode_ok, str(invalid_mode.get("message") or ""))
+
         tools = engine.registry.schemas()
         names = [str((item.get("function") or {}).get("name") or "") for item in tools]
         required_tools = {"link", "update_plan", "model_mode", "contextmanage", "apply_patch", "command"}
@@ -6706,14 +7450,19 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
         task = engine.preview_route("请帮我写一个网页版贪吃蛇，单文件 index.html", dispatch_mode="chat")
         code_only = engine.preview_route("写一个 Python 函数 is_even(n)，只给代码，不要创建文件。", dispatch_mode="chat")
         route_ok = (
-            casual.get("model") == engine._executor_model_for_mode(config.collab_mode)
+            casual.get("model") == engine._planner_model_for_mode(config.collab_mode)
+            and casual.get("request_slot") == "main"
             and bool(casual.get("thinking_enabled")) is False
+            and casual.get("temperature") is None
+            and casual.get("temperature_source") == "star_parameter_profile"
             and bool(task.get("tools_enabled"))
             and task.get("tool_scope") == "plan_gate"
             and bool(task.get("plan_required"))
+            and task.get("temperature") is None
             and code_only.get("category") == "code_generation"
             and not bool(code_only.get("tools_enabled"))
             and not bool(code_only.get("plan_required"))
+            and code_only.get("temperature") is None
         )
         _selftest_record(
             results,
@@ -6721,6 +7470,255 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
             route_ok,
             f"casual={casual.get('model')} task={task.get('tool_scope')}/{task.get('task_complexity')} code={code_only.get('category')}/{code_only.get('tool_scope')}",
         )
+
+        redaction_secret = "fixture-transport-secret-value"
+        redaction_client = DeepSeekClient(
+            config,
+            replace(config.main_api, api_key=redaction_secret),
+        )
+        redacted_error = redaction_client._safe_error_text(
+            f"HTTP 503 Bearer {redaction_secret} upstream echoed {redaction_secret}"
+        )
+        settings_input_ok = (
+            _normalize_http_base_url("https://relay.example/v1/") == "https://relay.example/v1"
+            and _normalize_http_base_url("http://127.0.0.1:8080/v1") == "http://127.0.0.1:8080/v1"
+            and _normalize_http_base_url("https://user:pass@relay.example/v1") is None
+            and _normalize_http_base_url("https://relay.example/v1?token=bad") is None
+            and _normalize_http_base_url("relay.example/v1") is None
+            and _normalize_custom_model_id("gpt-5.6-codex") == "gpt-5.6-codex"
+            and _normalize_custom_model_id("bad model") is None
+            and DeepSeekClient._is_retryable_http_status(429)
+            and DeepSeekClient._is_retryable_http_status(503)
+            and not DeepSeekClient._is_retryable_http_status(401)
+            and DeepSeekClient._is_retryable_error(ConnectionResetError("selftest"))
+            and DeepSeekClient(config)._retry_delay(1, retry_after=3.0) == 3.0
+            and redaction_secret not in redacted_error
+            and redacted_error.count("[REDACTED]") >= 1
+            and DeepSeekClient(
+                config,
+                replace(config.main_api, base_url="https://user:pass@relay.example:8443/v1"),
+            )._audit_base_host() == "relay.example:8443"
+        )
+        _selftest_record(results, "settings input and retry guards", settings_input_ok, "url/model normalized retry=429/503/reset")
+
+        contract_base = {
+            "slot": "main",
+            "api_key": "selftest-key",
+            "base_url": "https://example.invalid/v1",
+            "parameter_profile": "coding",
+            "timeout_seconds": 30.0,
+            "retry_count": 0,
+            "enable_sse": True,
+            "key_source": "slot",
+        }
+        gpt_56 = StarAPIConfig(
+            provider="gpt",
+            model="gpt-5.6-codex",
+            parameters={"reasoning_effort": "ultra", "verbosity": "high"},
+            **contract_base,
+        )
+        gpt_55 = replace(gpt_56, model="gpt-5.5-codex")
+        gemini_star = replace(
+            gpt_56,
+            slot="executor",
+            provider="gemini",
+            model="gemini-3-flash",
+            parameters={"temperature": 0.7, "top_p": 0.95, "top_k": 48, "reasoning_effort": "low"},
+        )
+        grok_star = replace(
+            gpt_56,
+            provider="grok",
+            model="grok-4",
+            parameters={"temperature": 0.4, "top_p": 0.9, "reasoning_effort": "high"},
+        )
+        multimodal_messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "ping"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}},
+                ],
+            }
+        ]
+
+        def contract_payload(star: StarAPIConfig) -> dict[str, Any]:
+            return DeepSeekClient(config, star)._build_payload(
+                messages=multimodal_messages,
+                tools=None,
+                tool_choice="none",
+                temperature=None,
+                stream=False,
+                thinking_enabled=True,
+                max_tokens=None,
+            )
+
+        payload_56 = contract_payload(gpt_56)
+        payload_55 = contract_payload(gpt_55)
+        payload_gemini = contract_payload(gemini_star)
+        payload_grok = contract_payload(grok_star)
+        gpt_filtered = _normalize_star_parameters(
+            "gpt",
+            "coding",
+            model="gpt-5.6-codex",
+            custom={"seed": 42},
+        )
+        deepseek_filtered = _normalize_star_parameters(
+            "deepseek",
+            "coding",
+            model="deepseek-v4-pro",
+            custom={"seed": 42},
+        )
+        cross_config = replace(
+            config,
+            main_api=gpt_56,
+            executor_api=gemini_star,
+            api_provider="gpt",
+            api_key=gpt_56.api_key,
+            base_url=gpt_56.base_url,
+            model=gpt_56.model,
+        )
+        cross_engine = ProjectLingEngine(cross_config)
+        contract_ok = (
+            payload_56.get("reasoning_effort") == "ultra"
+            and payload_55.get("reasoning_effort") == "xhigh"
+            and payload_56.get("verbosity") == "high"
+            and payload_gemini.get("temperature") == 0.7
+            and payload_gemini.get("top_p") == 0.95
+            and (((payload_gemini.get("extra_body") or {}).get("google") or {}).get("generation_config") or {}).get("topK") == 48
+            and payload_grok.get("reasoning_effort") == "high"
+            and "seed" not in gpt_filtered
+            and "seed" not in deepseek_filtered
+            and isinstance(payload_grok.get("messages", [{}])[0].get("content"), list)
+            and cross_engine.main_client.provider() == "gpt"
+            and cross_engine.executor_client.provider() == "gemini"
+            and cross_engine.preview_route("你好").get("request_slot") == "main"
+        )
+        _selftest_record(
+            results,
+            "dual-provider payload contracts",
+            contract_ok,
+            "gpt56=ultra gpt55=xhigh gemini=temperature/topK grok=reasoning unsupported=filtered multimodal=preserved",
+        )
+
+        class _SelftestStreamClient:
+            def __init__(self, chunks: list[dict[str, Any]], star: StarAPIConfig) -> None:
+                self.chunks = chunks
+                self.star_config = star
+
+            def _request_timeout(self, *, stream: bool) -> float:
+                return 180.0 if stream else 30.0
+
+            def chat_completions_stream(self, **_kwargs: Any):
+                yield from self.chunks
+
+        soft_events: list[tuple[str, dict[str, Any]]] = []
+        folded_response = engine._stream_chat_completions(
+            client=_SelftestStreamClient(
+                [
+                    {
+                        "choices": [
+                            {
+                                "delta": {
+                                    "reasoning_content": "r" * 13000,
+                                    "content": "final answer survives folded reasoning",
+                                }
+                            }
+                        ]
+                    },
+                    {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+                ],
+                replace(gemini_star, parameters={**gemini_star.parameters, "max_tokens": 512}),
+            ),
+            messages=[{"role": "user", "content": "stream contract"}],
+            tools=None,
+            max_tokens=512,
+            on_stream_event=lambda kind, payload: soft_events.append((kind, dict(payload))),
+        )
+        long_content = "长输出" * 5000
+        long_response = engine._stream_chat_completions(
+            client=_SelftestStreamClient(
+                [
+                    *(
+                        {"choices": [{"delta": {"content": char}}]}
+                        for char in long_content
+                    ),
+                    {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+                ],
+                replace(gemini_star, parameters={**gemini_star.parameters, "max_tokens": 4096}),
+            ),
+            messages=[{"role": "user", "content": "long stream contract"}],
+            tools=None,
+            max_tokens=4096,
+        )
+        folded_message = (((folded_response.get("choices") or [{}])[0] or {}).get("message") or {})
+        long_message = (((long_response.get("choices") or [{}])[0] or {}).get("message") or {})
+        folded_limits = folded_response.get("_projectling_stream_limits") or {}
+        long_limits = long_response.get("_projectling_stream_limits") or {}
+        stream_budget_ok = (
+            folded_message.get("content") == "final answer survives folded reasoning"
+            and (((folded_response.get("choices") or [{}])[0] or {}).get("finish_reason") == "stop")
+            and folded_limits.get("reasoning_folded") is True
+            and any(kind == "stream_limit" and payload.get("soft") is True for kind, payload in soft_events)
+            and long_message.get("content") == long_content
+            and int(long_limits.get("content_chars") or 0) >= len(long_content)
+        )
+        _selftest_record(
+            results,
+            "adaptive stream completion",
+            stream_budget_ok,
+            f"folded={int(bool(folded_limits.get('reasoning_folded')))} content={len(str(long_message.get('content') or ''))}/{len(long_content)} chunks={len(long_content)}",
+        )
+
+        star_switch_executor = engine.preview_route("切到执行星", allow_tools=True, dispatch_mode="chat")
+        star_switch_main = engine.preview_route("切回主星继续", allow_tools=True, dispatch_mode="chat")
+        star_send = engine.preview_route("给执行星发一句：你好", allow_tools=True, dispatch_mode="chat")
+        legacy_switch = engine.preview_route("切到辅导位", allow_tools=True, dispatch_mode="chat")
+        star_routes_ok = (
+            star_switch_executor.get("category") == "speaker_handoff"
+            and star_switch_executor.get("speaker_handoff_target") == "liaison"
+            and star_switch_main.get("category") == "speaker_handoff"
+            and star_switch_main.get("speaker_handoff_target") == "main"
+            and star_send.get("category") == "liaison_delivery"
+            and star_send.get("liaison_delivery_action") == "send"
+            and legacy_switch.get("category") == "speaker_handoff"
+            and legacy_switch.get("speaker_handoff_target") == "liaison"
+        )
+        _selftest_record(
+            results,
+            "dual-star route aliases",
+            star_routes_ok,
+            f"exec={star_switch_executor.get('category')}/{star_switch_executor.get('speaker_handoff_target')} "
+            f"main={star_switch_main.get('category')}/{star_switch_main.get('speaker_handoff_target')} "
+            f"send={star_send.get('category')}/{star_send.get('liaison_delivery_action')}",
+        )
+
+        with tempfile.TemporaryDirectory(prefix="projectling-dualstar-selftest-") as dualstar_tmp:
+            previous_read_only = os.environ.pop("PROJECTLING_RUNTIME_STATE_READ_ONLY", None)
+            try:
+                dualstar_config = replace(config, runtime_dir=Path(dualstar_tmp))
+                dualstar_roster = load_roster(dualstar_config)
+                if len(dualstar_roster) >= 2:
+                    first_role, second_role = dualstar_roster[:2]
+                    select_current_role_by_name(first_role.name_en, dualstar_config)
+                    select_liaison_role_by_name(second_role.name_en, dualstar_config)
+                    select_current_role_by_name(second_role.name_en, dualstar_config)
+                    swapped_bundle = resolve_persona_bundle(dualstar_config)
+                    dualstar_swap_ok = (
+                        swapped_bundle.main.name_en == second_role.name_en
+                        and swapped_bundle.liaison is not None
+                        and swapped_bundle.liaison.name_en == first_role.name_en
+                        and swapped_bundle.source == "selected"
+                        and "主星：" in swapped_bundle.dualstar_label
+                        and "执行星：" in swapped_bundle.dualstar_label
+                    )
+                    dualstar_swap_detail = f"{swapped_bundle.main.name_en}/{swapped_bundle.liaison.name_en if swapped_bundle.liaison else '-'}"
+                else:
+                    dualstar_swap_ok = False
+                    dualstar_swap_detail = f"roster={len(dualstar_roster)}"
+            finally:
+                if previous_read_only is not None:
+                    os.environ["PROJECTLING_RUNTIME_STATE_READ_ONLY"] = previous_read_only
+        _selftest_record(results, "dual-star safe swap", dualstar_swap_ok, dualstar_swap_detail)
 
         class _SelftestStatusPrinter:
             def __init__(self) -> None:
@@ -6741,6 +7739,45 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
         )  # type: ignore[arg-type]
         status_ok = not casual_status and not strict_status and analysis_status and status_printer.kinds == ["thinking"]
         _selftest_record(results, "initial status policy", status_ok, f"calls={','.join(status_printer.kinds) or '-'}")
+
+        class _SelftestResultPrinter:
+            def __init__(self, *, assistant_content_seen: bool = False) -> None:
+                self.assistant_content_seen = assistant_content_seen
+                self.stream_limit_notified = False
+                self.messages: list[str] = []
+                self.notices: list[str] = []
+
+            def emit_message(self, text: str) -> None:
+                self.messages.append(text)
+                self.assistant_content_seen = True
+
+            def emit_plain_block(self, text: str, *, trailing_blank: bool = True) -> None:
+                del trailing_blank
+                self.notices.append(_strip_ansi(text))
+
+        nonstream_printer = _SelftestResultPrinter()
+        nonstream_result = SimpleNamespace(
+            text="final tool-loop answer",
+            raw_response={"choices": []},
+            finish_reason="stop",
+        )
+        streamed_printer = _SelftestResultPrinter(assistant_content_seen=True)
+        streamed_result = SimpleNamespace(
+            text="already streamed",
+            raw_response={"_projectling_streamed": True},
+            finish_reason="stop",
+        )
+        length_printer = _SelftestResultPrinter()
+        length_result = SimpleNamespace(text="partial", raw_response={}, finish_reason="length")
+        final_render_ok = (
+            _ensure_result_text_rendered(nonstream_printer, nonstream_result)  # type: ignore[arg-type]
+            and nonstream_printer.messages == ["final tool-loop answer"]
+            and not _ensure_result_text_rendered(streamed_printer, streamed_result)  # type: ignore[arg-type]
+            and streamed_printer.messages == []
+            and _emit_finish_reason_notice(length_printer, length_result)  # type: ignore[arg-type]
+            and any("输出长度上限" in item for item in length_printer.notices)
+        )
+        _selftest_record(results, "mixed stream final rendering", final_render_ok, "nonstream-after-tool=visible streamed=no-duplicate length=notice")
 
         with tempfile.TemporaryDirectory(prefix="projectling-audit-selftest-") as audit_tmp:
             audit_path = Path(audit_tmp) / "model-requests.jsonl"
@@ -6826,6 +7863,204 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
             valid_ok and not invalid_ok,
             invalid_error or "validator",
         )
+
+        with tempfile.TemporaryDirectory(prefix="projectling-tool-loop-selftest-", dir=str(Path.home())) as loop_tmp:
+            loop_root = Path(loop_tmp)
+            loop_context = loop_root / "context"
+            loop_config_dir = loop_root / "config"
+            loop_memory = loop_root / "memory"
+            loop_config = replace(
+                config,
+                root_dir=loop_root,
+                config_dir=loop_config_dir,
+                context_dir=loop_context,
+                runtime_dir=loop_config_dir,
+                env_file_path=loop_config_dir / "env",
+                external_context_path=loop_context / "shared_context.txt",
+                shared_context_path=loop_context / "shared_context.txt",
+                context_entries_path=loop_context / "entries.jsonl",
+                persona_dir=loop_context / "persona",
+                dualstar_dir=loop_context / "dualstar",
+                memory_dir=loop_memory,
+                datememory_path=loop_memory / "datememory.json",
+                memory_db_path=loop_memory / "memory.db",
+            )
+
+            class _SelftestFailureRegistry:
+                def __init__(self) -> None:
+                    self.definitions: dict[str, Any] = {}
+
+                def register(self, tool: Any) -> None:
+                    self.definitions[str(tool.name)] = tool
+
+                def schemas(self) -> list[dict[str, Any]]:
+                    command_schema = {
+                        "type": "function",
+                        "function": {
+                            "name": "command",
+                            "description": "selftest command",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {"command": {"type": "string"}},
+                                "required": ["command"],
+                            },
+                        },
+                    }
+                    return [command_schema, *[tool.schema() for tool in self.definitions.values()]]
+
+                def execute_tool_call(self, tool_call: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+                    payload = {
+                        "status": "error",
+                        "tool": "command",
+                        "channel": "Bash",
+                        "command": "ping -c 1 192.0.2.1",
+                        "returncode": 1,
+                        "stdout": "1 packets transmitted, 0 received, 100% packet loss",
+                        "stderr": "",
+                        "message": "ping target unreachable",
+                    }
+                    if context.event_callback is not None:
+                        context.event_callback("tool_start", payload)
+                        context.event_callback("tool_result", payload)
+                    return {
+                        "role": "tool",
+                        "tool_call_id": str(tool_call.get("id") or "selftest-call"),
+                        "name": "command",
+                        "content": json.dumps(payload, ensure_ascii=False),
+                    }
+
+            class _SelftestFailureLoopClient:
+                def __init__(self) -> None:
+                    self.calls: list[dict[str, Any]] = []
+
+                def chat_completions(self, **kwargs: Any) -> dict[str, Any]:
+                    self.calls.append(kwargs)
+                    if len(self.calls) == 1:
+                        return {
+                            "choices": [
+                                {
+                                    "message": {
+                                        "role": "assistant",
+                                        "content": "",
+                                        "tool_calls": [
+                                            {
+                                                "id": "selftest-ping",
+                                                "type": "function",
+                                                "function": {
+                                                    "name": "command",
+                                                    "arguments": json.dumps(
+                                                        {"command": "ping -c 1 192.0.2.1"},
+                                                        ensure_ascii=False,
+                                                    ),
+                                                },
+                                            }
+                                        ],
+                                    },
+                                    "finish_reason": "tool_calls",
+                                }
+                            ]
+                        }
+                    return {
+                        "choices": [
+                            {
+                                "message": {
+                                    "role": "assistant",
+                                    "content": "工具已完成轮询：目标不可达，已根据失败回执给出结论。",
+                                },
+                                "finish_reason": "stop",
+                            }
+                        ]
+                    }
+
+            loop_client = _SelftestFailureLoopClient()
+            loop_engine = ProjectLingEngine(
+                loop_config,
+                client=loop_client,  # type: ignore[arg-type]
+                registry=_SelftestFailureRegistry(),  # type: ignore[arg-type]
+            )
+            loop_result = loop_engine.chat(
+                "帮我 ping 一下 192.0.2.1",
+                cwd=loop_root,
+                mode="chat",
+                allow_tools=True,
+                stream=False,
+            )
+            followup_messages = loop_client.calls[1].get("messages") if len(loop_client.calls) > 1 else []
+            followup_text = "\n".join(str(item.get("content") or "") for item in followup_messages or [] if isinstance(item, dict))
+            tool_loop_ok = (
+                len(loop_client.calls) == 2
+                and loop_result.rounds == 2
+                and loop_result.finish_reason == "stop"
+                and "目标不可达" in loop_result.text
+                and len(loop_result.tool_traces) == 1
+                and str((loop_result.tool_traces[0].get("result") or {}).get("status")) == "error"
+                and "上一条工具结果失败" in followup_text
+            )
+            _selftest_record(
+                results,
+                "failed tool loop completion",
+                tool_loop_ok,
+                f"calls={len(loop_client.calls)} rounds={loop_result.rounds} finish={loop_result.finish_reason}",
+            )
+
+            blocked_action, blocked_reasons = loop_engine._auto_link_outcome(
+                [
+                    {
+                        "id": "plan-start",
+                        "name": "update_plan",
+                        "result": {"tool": "update_plan", "status": "ok", "plan_status": "in_progress"},
+                    },
+                    {
+                        "id": "failed-command",
+                        "name": "command",
+                        "result": {
+                            "tool": "command",
+                            "status": "error",
+                            "command": "ping -c 1 192.0.2.1",
+                            "message": "unreachable",
+                        },
+                    },
+                ],
+                {"plan_required": True, "update_plan_started": True},
+            )
+            done_action, done_reasons = loop_engine._auto_link_outcome(
+                [
+                    {
+                        "id": "failed-command",
+                        "name": "command",
+                        "result": {
+                            "tool": "command",
+                            "status": "error",
+                            "command": "probe",
+                            "message": "first attempt",
+                        },
+                    },
+                    {
+                        "id": "fixed-command",
+                        "name": "command",
+                        "result": {"tool": "command", "status": "ok", "command": "probe"},
+                    },
+                    {
+                        "id": "plan-done",
+                        "name": "update_plan",
+                        "result": {"tool": "update_plan", "status": "ok", "plan_status": "done"},
+                    },
+                ],
+                {"plan_required": True, "update_plan_started": True},
+            )
+            auto_link_ok = (
+                blocked_action == "blocked"
+                and bool(blocked_reasons)
+                and done_action == "done"
+                and not done_reasons
+            )
+            _selftest_record(
+                results,
+                "xlink automatic outcome",
+                auto_link_ok,
+                f"blocked={len(blocked_reasons)} done={len(done_reasons)}",
+            )
+
         class _SelftestReviewClient:
             def chat_completions(self, **kwargs: Any) -> dict[str, Any]:
                 return {
@@ -6997,17 +8232,30 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
                     "action": "start",
                     "mode": "todo",
                     "title": "selftest",
-                    "items": [{"id": "T1", "title": "step", "status": "in_progress"}],
+                    "items": [
+                        {"id": "T1", "title": "step one", "status": "in_progress"},
+                        {"id": "T2", "title": "step two", "status": "pending"},
+                    ],
                 },
                 context,
             )
-            plan_done = _execute_update_plan_tool({"action": "complete", "step_id": "T1"}, context)
+            plan_progress = _execute_update_plan_tool(
+                {"action": "update", "step_id": "T1", "status": "in_progress"},
+                context,
+            )
+            plan_step_done = _execute_update_plan_tool({"action": "complete", "step_id": "T1"}, context)
+            plan_done = _execute_update_plan_tool({"action": "complete", "step_id": "T2"}, context)
             _selftest_record(
                 results,
                 "update_plan execution",
                 plan_start.get("status") == "ok"
                 and plan_start.get("next") == ""
-                and plan_done.get("status") == "ok",
+                and plan_start.get("needs_review") is True
+                and plan_progress.get("needs_review") is False
+                and plan_step_done.get("needs_review") is False
+                and plan_done.get("status") == "ok"
+                and plan_done.get("plan_status") == "done"
+                and plan_done.get("needs_review") is True,
                 str(plan_done.get("message") or ""),
             )
             context_status = _execute_contextmanage_tool({"mode": "status"}, context)
@@ -7152,6 +8400,8 @@ def _cmd_selftest(args: argparse.Namespace) -> int:
 
     _selftest_run_command(results, "settings root exits", [sys.executable, "core.py", "shell-settings"], input_text="0\n", timeout=10)
     _selftest_run_command(results, "slash help exits", [sys.executable, "core.py", "/help"], timeout=10)
+    _selftest_run_command(results, "status text exits", [sys.executable, "core.py", "status"], timeout=10)
+    _selftest_run_command(results, "status json exits", [sys.executable, "core.py", "/status", "--json"], timeout=10)
     _selftest_run_command(results, "settings api direct exits", [sys.executable, "core.py", "settings", "api"], input_text="0\n", timeout=10)
     _selftest_run_command(results, "settings api slash exits", [sys.executable, "core.py", "/settings", "api"], input_text="0\n", timeout=10)
     _selftest_run_command(results, "settings gemini direct exits", [sys.executable, "core.py", "settings", "gemini"], input_text="0\n", timeout=10)
@@ -7327,6 +8577,7 @@ def _cmd_render_motd_card(args: argparse.Namespace) -> int:
         settings_label=args.settings_label,
         max_lines=args.max_lines,
         persona_bundle=persona_bundle,
+        status_line=_dualstar_surface_line(config),
     ):
         print(line)
     return 0
@@ -7376,6 +8627,7 @@ def _cmd_animate_motd_card(args: argparse.Namespace) -> int:
             settings_label=args.settings_label,
             max_lines=args.max_lines,
             persona_bundle=persona_bundle,
+            status_line=_dualstar_surface_line(config),
         ):
             print(line)
     sys.stdout.flush()
@@ -7427,43 +8679,62 @@ def _cmd_show_tools(args: argparse.Namespace) -> int:
 
 
 def _apply_diagnostic_api_overrides(config: ProjectLingConfig, args: argparse.Namespace) -> ProjectLingConfig:
+    slot = str(getattr(args, "slot", "main") or "main").strip().lower()
+    target_slots = ("main", "executor") if slot == "both" else ("executor",) if slot == "executor" else ("main",)
     updates: dict[str, Any] = {}
     base_url = str(getattr(args, "base_url", "") or "").strip()
-    if base_url:
-        updates["base_url"] = base_url
-        if _api_provider_value(getattr(config, "api_provider", "")) == "gemini":
-            updates["gemini_base_url"] = base_url
-        else:
-            updates["deepseek_base_url"] = base_url
     timeout = getattr(args, "timeout", None)
-    if timeout is not None:
-        try:
-            updates["timeout_seconds"] = max(5.0, float(timeout))
-        except (TypeError, ValueError):
-            pass
+    try:
+        timeout_value = max(5.0, float(timeout)) if timeout is not None else None
+    except (TypeError, ValueError):
+        timeout_value = None
+    for target_slot in target_slots:
+        star = _star_for_slot(config, target_slot)
+        star_updates: dict[str, Any] = {}
+        if base_url:
+            star_updates["base_url"] = base_url.rstrip("/")
+        if timeout_value is not None:
+            star_updates["timeout_seconds"] = timeout_value
+        if star_updates:
+            updates[f"{target_slot}_api"] = replace(star, **star_updates)
+    if "main_api" in updates:
+        main_star = updates["main_api"]
+        updates.update(
+            {
+                "api_provider": main_star.provider,
+                "api_key": main_star.api_key,
+                "base_url": main_star.base_url,
+                "model": main_star.model,
+                "timeout_seconds": main_star.timeout_seconds,
+            }
+        )
     return replace(config, **updates) if updates else config
 
 
 def _cmd_list_models(args: argparse.Namespace) -> int:
     config = _apply_diagnostic_api_overrides(load_config(), args)
     _cleanup_legacy_runtime(config)
-    client = DeepSeekClient(config)
+    slot = "executor" if str(getattr(args, "slot", "main")) == "executor" else "main"
+    star = _star_for_slot(config, slot)
+    client = _client_for_star(config, star)
     width = _compact_render_width()
+    diagnostic_label = f"{STAR_SLOT_LABELS[slot]} · {_provider_label(star)}"
     started = time.time()
     try:
         payload = client.list_models()
     except Exception as exc:
         error_payload = {
             "ok": False,
-            "provider": _api_provider_value(getattr(config, "api_provider", "")),
-            "base_url": config.base_url,
+            "provider": star.provider,
+            "slot": slot,
+            "base_url": star.base_url,
             "elapsed_seconds": round(time.time() - started, 3),
             "error": str(exc),
         }
         if args.json:
             print(json.dumps(error_payload, ensure_ascii=False, indent=2))
         else:
-            _print_fit(_model_list_title(_provider_label(config), "fail", width=width), width=width)
+            _print_fit(_model_list_title(diagnostic_label, "fail", width=width), width=width)
             _print_setting_pair("base", error_payload["base_url"], width=width)
             _print_fit_wrapped(error_payload["error"], width=width)
             _print_next_action_check(["API Key", "Base URL", "模型列表接口", "网络"], width=width)
@@ -7472,7 +8743,7 @@ def _cmd_list_models(args: argparse.Namespace) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
     ids = _extract_model_ids(payload)
-    _print_fit(_model_list_title(_provider_label(config), len(ids), width=width), width=width)
+    _print_fit(_model_list_title(diagnostic_label, len(ids), width=width), width=width)
     if not ids:
         _print_fit("模型列表为空", width=width)
         _print_fit_wrapped("Relay 返回成功，但没有可用模型。", width=width, max_lines=2)
@@ -7492,23 +8763,33 @@ def _cmd_api_test(args: argparse.Namespace) -> int:
     config = _apply_diagnostic_api_overrides(load_config(), args)
     _cleanup_legacy_runtime(config)
     width = _compact_render_width()
-    if not config.api_key:
+    slot = str(getattr(args, "slot", "both") or "both")
+    stars = [config.main_api, config.executor_api] if slot == "both" else [_star_for_slot(config, slot)]
+    missing_stars = [star for star in stars if not star.api_key]
+    if missing_stars:
+        missing_slots = [star.slot for star in missing_stars]
         payload = {
             "ok": False,
-            "provider": _api_provider_value(getattr(config, "api_provider", "")),
+            "provider": "+".join(star.provider for star in stars),
+            "main_provider": config.main_api.provider,
+            "executor_provider": config.executor_api.provider,
+            "slot": slot,
+            "missing_slots": missing_slots,
             "error": "api_key_missing",
         }
         if args.json:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
-            _print_fit("未设置当前 Provider 的 API Key。", width=width)
-            _print_fit_wrapped("下一步：先写入当前 Provider 的 API Key。", width=width)
+            missing_labels = "、".join(STAR_SLOT_LABELS.get(name, name) for name in missing_slots)
+            _print_fit(f"{missing_labels} API Key 未设置。", width=width)
+            _print_fit_wrapped("下一步：在对应星位 API 配置中写入 Key。", width=width)
         return 1
 
     payload = _build_api_test_payload(
         config,
         override_model=str(getattr(args, "model", "") or "").strip(),
         force_no_stream=bool(getattr(args, "no_stream", False)),
+        slot=slot,
     )
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -7641,6 +8922,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "doctor":
             return _cmd_doctor()
+        if args.command in {"status", "/status"}:
+            return _cmd_status(args)
         if args.command == "cleanup":
             return _cmd_cleanup()
         if args.command == "selftest":

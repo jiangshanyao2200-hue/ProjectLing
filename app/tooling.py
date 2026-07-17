@@ -2741,17 +2741,33 @@ def _execute_update_plan_tool(args: dict[str, Any], context: ToolContext) -> dic
         state["revision"] = 1
     _write_update_plan_state(context.config, state)
 
-    message_map = {
-        "start": "计划已建立，执行星按步骤推进；每完成一步继续调用 update_plan。",
-        "update": "计划已更新，主星将复审方向后继续。",
-        "complete": "计划已收束，主星将做最终审查。",
-    }
+    plan_status = _update_plan_status_from_items(
+        [dict(item) for item in state.get("items") or [] if isinstance(item, dict)]
+    )
+    structural_replan = bool(action == "update" and updates and replace_items)
+    needs_review = bool(
+        action == "start"
+        or structural_replan
+        or plan_status in {"blocked", "done"}
+    )
+    if action == "start":
+        message = "计划已建立，主星复审后由执行星按步骤推进。"
+    elif action == "update" and needs_review:
+        message = "计划结构或阻塞状态已变化，主星将复审方向后继续。"
+    elif action == "update":
+        message = "计划进度已更新，执行星按最新状态继续。"
+    elif action == "complete" and plan_status == "done":
+        message = "计划已收束，主星将做最终审查。"
+    elif action == "complete":
+        message = "当前步骤已完成，执行星继续下一步。"
+    else:
+        message = "计划已更新。"
     return _update_plan_payload(
         action=action,
         state=state,
         brief=brief,
-        message=message_map.get(action, "计划已更新。"),
-        needs_review=action in {"start", "update", "complete"},
+        message=message,
+        needs_review=needs_review,
     )
 
 
@@ -2981,6 +2997,7 @@ def _termux_allow_external_apps_enabled() -> bool:
     path = Path.home() / ".termux" / "termux.properties"
     if not path.is_file():
         return False
+    configured_value: str | None = None
     try:
         for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
             line = raw_line.strip()
@@ -2988,10 +3005,10 @@ def _termux_allow_external_apps_enabled() -> bool:
                 continue
             key, value = (part.strip().lower() for part in line.split("=", 1))
             if key == "allow-external-apps":
-                return value == "true"
+                configured_value = value
     except OSError:
         return False
-    return False
+    return configured_value == "true"
 
 
 def _launch_termux_session(*, root_dir: Path, cwd: Path, session_name: str) -> dict[str, Any]:

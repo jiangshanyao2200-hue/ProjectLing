@@ -288,6 +288,9 @@ def compact_round_payload(payload: dict[str, Any], detail_path: Path) -> dict[st
         if live is None
         else {
             "ok": live.get("ok"),
+            "provider": live.get("provider"),
+            "main_provider": live.get("main_provider"),
+            "executor_provider": live.get("executor_provider"),
             "rounds": live.get("rounds"),
             "tool_names": live.get("tool_names"),
             "tool_actor_labels": live.get("tool_actor_labels"),
@@ -486,6 +489,20 @@ def component_resolution_status(payload: dict[str, Any], component: str) -> tupl
             return ("resolved", evidence) if ok else ("", evidence)
         ok = bool(live.get("ok") and miss <= 1000 and hit_rate >= 85.0 and live.get("context_restored"))
         return ("resolved", f"live_chat_cache_ok=true miss={miss} hit_rate={hit_rate}") if ok else ("", f"live_chat_cache_ok=false miss={miss} hit_rate={hit_rate}")
+    if component == "live_chat_cost":
+        live = payload.get("live_chat_smoke") if isinstance(payload.get("live_chat_smoke"), dict) else {}
+        usage_total = live.get("request_usage_total") if isinstance(live.get("request_usage_total"), dict) else {}
+        try:
+            prompt_tokens = int(usage_total.get("prompt_tokens"))
+        except (TypeError, ValueError):
+            return ("", "live_chat_cost_prompt_tokens=missing")
+        try:
+            api_calls = int(usage_total.get("api_calls") or 0)
+        except (TypeError, ValueError):
+            api_calls = 0
+        ok = bool(live.get("ok") and live.get("context_restored") and prompt_tokens <= 50000)
+        evidence = f"live_chat_cost_ok={str(ok).lower()} prompt={prompt_tokens} api_calls={api_calls}"
+        return ("resolved", evidence) if ok else ("", evidence)
     ui = payload.get("ui_smoke") if isinstance(payload.get("ui_smoke"), dict) else {}
     if component == "ui" and ui.get("ok"):
         return ("resolved", "ui_smoke_ok=true")
@@ -1852,7 +1869,9 @@ def smoke_live_chat_tool_call(ctx: ToolContext) -> dict[str, Any]:
             api_calls.append(record)
             return response
 
-    engine.client = _UsageRecordingClient(engine.client)
+    engine.main_client = _UsageRecordingClient(engine.main_client)
+    engine.executor_client = _UsageRecordingClient(engine.executor_client)
+    engine.client = engine.main_client
     live_command = (
         "Write-Output PROJECTLING_LIVE_TOOLCALL_SMOKE"
         if os.name == "nt"
@@ -1999,6 +2018,8 @@ def smoke_live_chat_tool_call(ctx: ToolContext) -> dict[str, Any]:
         return {
             "tool": "live_chat",
             "provider": provider,
+            "main_provider": sandbox_config.main_api.provider,
+            "executor_provider": sandbox_config.executor_api.provider,
             "attempt": attempt,
             "returncode": 0,
             "elapsed_seconds": round(time.time() - attempt_started, 3),

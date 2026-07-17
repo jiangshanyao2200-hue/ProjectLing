@@ -205,6 +205,28 @@ sealed class ProjectLingWindowsLauncher
                 case "/s":
                     OpenSettings("root");
                     continue;
+                case "/main-api":
+                case "/main":
+                    OpenSettings("main");
+                    continue;
+                case "/executor-api":
+                case "/executor":
+                    OpenSettings("executor");
+                    continue;
+                case "/gpt":
+                case "/codex":
+                    OpenSettings("gpt");
+                    continue;
+                case "/gemini":
+                    OpenSettings("gemini");
+                    continue;
+                case "/grok":
+                case "/xai":
+                    OpenSettings("grok");
+                    continue;
+                case "/deepseek":
+                    OpenSettings("deepseek");
+                    continue;
                 case "/reroll":
                     RunCore("reroll-role");
                     RenderAnimatedCard(reroll: false);
@@ -228,14 +250,14 @@ sealed class ProjectLingWindowsLauncher
                 case "/models":
                 case "/model-list":
                 case "/list-models":
-                    DrawSectionHeader("MODELS", "当前 Provider 模型列表");
-                    RunCore("list-models");
+                    DrawSectionHeader("MODELS", "主星 Provider 模型列表；执行星可用 /models --slot executor");
+                    RunCore("list-models", "--slot", "main");
                     DrawStatusPanel();
                     continue;
                 case "/api-test":
                 case "/apitest":
-                    DrawSectionHeader("API TEST", "执行星模型连通性");
-                    RunCore("api-test");
+                    DrawSectionHeader("API TEST", "主星 / 执行星跨 Provider 连通性");
+                    RunCore("api-test", "--slot", "both");
                     DrawStatusPanel();
                     continue;
                 case "/debug":
@@ -257,6 +279,23 @@ sealed class ProjectLingWindowsLauncher
             if (line.StartsWith("/settings ", StringComparison.OrdinalIgnoreCase))
             {
                 OpenSettings(line[10..].Trim());
+                continue;
+            }
+            if (line.StartsWith("/models ", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("/model-list ", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("/list-models ", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                RunCore(new[] { "list-models" }.Concat(parts.Skip(1)).ToArray());
+                DrawStatusPanel();
+                continue;
+            }
+            if (line.StartsWith("/api-test ", StringComparison.OrdinalIgnoreCase)
+                || line.StartsWith("/apitest ", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                RunCore(new[] { "api-test" }.Concat(parts.Skip(1)).ToArray());
+                DrawStatusPanel();
                 continue;
             }
             if (line.StartsWith("/mode ", StringComparison.OrdinalIgnoreCase))
@@ -532,10 +571,14 @@ sealed class ProjectLingWindowsLauncher
         var tab = (value ?? "").Trim().ToLowerInvariant();
         return tab switch
         {
-            "" or "root" or "main" or "all" => "root",
+            "" or "root" or "all" => "root",
             "api" or "key" or "keys" => "api",
+            "main" or "main-api" or "main_api" or "planner" => "main",
+            "executor" or "executor-api" or "executor_api" or "support" => "executor",
+            "gpt" or "codex" or "openai" => "gpt",
             "deepseek" => "deepseek",
             "gemini" => "gemini",
+            "grok" or "xai" => "grok",
             "gemini-params" or "gemini_params" or "params" or "advanced" => "gemini_params",
             "websearch" or "web-search" or "web_search" or "search" => "websearch",
             "role" or "roles" or "persona" or "personas" => "persona",
@@ -768,8 +811,8 @@ sealed class ProjectLingWindowsLauncher
         var widths = ParseLayoutProbeWidths(args);
         var role = ReadCurrentRoleInfo();
         var mode = ReadEnvFileValue("PROJECTLING_COLLAB_MODE", "standard");
-        var activeProvider = ReadApiProvider();
-        var apiStatus = ReadApiStatus(activeProvider);
+        var activeProvider = $"{ReadApiProvider("main")}+{ReadApiProvider("executor")}";
+        var apiStatus = ReadApiStatus();
         var helpLines = BuildWindowsHelpLines(MaxLayoutWidth);
         var commandAliases = new[]
         {
@@ -1571,7 +1614,7 @@ sealed class ProjectLingWindowsLauncher
         }
         if (width < 32)
         {
-            return [$"主星：{roleText}", $"协同模式：{modeText}", $"服务商：{api}", $"角色剩余时间：{role.RemainingText}"];
+            return [$"主星：{roleText}", $"协同模式：{modeText}", $"双星 API：{api}", $"角色剩余时间：{role.RemainingText}"];
         }
         var contentWidth = Math.Max(1, width - 2);
         var combined = $"协同模式：{modeText} · {api}";
@@ -1579,7 +1622,7 @@ sealed class ProjectLingWindowsLauncher
         {
             return [$"主星：{roleText}", combined, $"角色剩余时间：{role.RemainingText}"];
         }
-        return [$"主星：{roleText}", $"协同模式：{modeText}", $"服务商：{api}", $"角色剩余时间：{role.RemainingText}"];
+        return [$"主星：{roleText}", $"协同模式：{modeText}", $"双星 API：{api}", $"角色剩余时间：{role.RemainingText}"];
     }
 
     private static IReadOnlyList<string> BuildCompactStatusLines(RoleInfo role, string mode, string api, int width)
@@ -1588,7 +1631,7 @@ sealed class ProjectLingWindowsLauncher
         var modeText = CollaborationModeLabel(mode);
         if (width < 32)
         {
-            return [$"主星：{roleText}", $"协同模式：{modeText}", $"服务商：{api}", $"角色剩余时间：{role.RemainingText}"];
+            return [$"主星：{roleText}", $"协同模式：{modeText}", $"双星 API：{api}", $"角色剩余时间：{role.RemainingText}"];
         }
         var contentWidth = Math.Max(1, width - 2);
         var combined = $"协同模式：{modeText} · {api}";
@@ -1596,7 +1639,7 @@ sealed class ProjectLingWindowsLauncher
         {
             return [$"主星：{roleText}", combined, $"角色剩余时间：{role.RemainingText}"];
         }
-        return [$"主星：{roleText}", $"协同模式：{modeText}", $"服务商：{api}", $"角色剩余时间：{role.RemainingText}"];
+        return [$"主星：{roleText}", $"协同模式：{modeText}", $"双星 API：{api}", $"角色剩余时间：{role.RemainingText}"];
     }
 
     private static string CollaborationModeLabel(string mode)
@@ -1618,7 +1661,7 @@ sealed class ProjectLingWindowsLauncher
     {
         return
         [
-            new SlashMenuItem("/settings", "设置", "API / 模型 / 搜索 / 系统"),
+            new SlashMenuItem("/settings", "设置", "主星 API / 执行星 API / 搜索 / 系统"),
             new SlashMenuItem("/role", "角色", "抽卡 / 锁定 / 主星 / 执行星"),
             new SlashMenuItem("/exit", "退出", "关闭窗口"),
         ];
@@ -1663,17 +1706,47 @@ sealed class ProjectLingWindowsLauncher
         ];
     }
 
-    private string ReadApiProvider()
+    private static string NormalizeApiProvider(string provider)
     {
-        var provider = ReadEnvFileValue("PROJECTLING_API_PROVIDER", "deepseek").Trim().ToLowerInvariant();
-        return provider == "gemini" ? "gemini" : "deepseek";
+        return (provider ?? "").Trim().ToLowerInvariant() switch
+        {
+            "gpt" or "openai" or "codex" => "gpt",
+            "gemini" => "gemini",
+            "grok" or "xai" => "grok",
+            _ => "deepseek",
+        };
+    }
+
+    private string ReadApiProvider(string slot = "main")
+    {
+        var legacy = ReadEnvFileValue("PROJECTLING_API_PROVIDER", "deepseek");
+        var key = slot.Equals("executor", StringComparison.OrdinalIgnoreCase)
+            ? "PROJECTLING_EXECUTOR_PROVIDER"
+            : "PROJECTLING_MAIN_PROVIDER";
+        var configured = ReadEnvFileValue(key, legacy);
+        return NormalizeApiProvider(string.IsNullOrWhiteSpace(configured) ? legacy : configured);
+    }
+
+    private static string ApiProviderLabel(string provider)
+    {
+        return NormalizeApiProvider(provider) switch
+        {
+            "gpt" => "GPT/Codex",
+            "gemini" => "Gemini",
+            "grok" => "Grok",
+            _ => "DeepSeek",
+        };
     }
 
     private string ReadApiStatus(string? provider = null)
     {
-        var activeProvider = string.IsNullOrWhiteSpace(provider) ? ReadApiProvider() : provider.Trim().ToLowerInvariant();
-        activeProvider = activeProvider == "gemini" ? "gemini" : "deepseek";
-        return activeProvider == "gemini" ? "Gemini" : "DeepSeek";
+        if (!string.IsNullOrWhiteSpace(provider) && !provider.Contains('+'))
+        {
+            return ApiProviderLabel(provider);
+        }
+        var main = ApiProviderLabel(ReadApiProvider("main"));
+        var executor = ApiProviderLabel(ReadApiProvider("executor"));
+        return main == executor ? main : $"主 {main} · 执 {executor}";
     }
 
     private static string BuildMessageDividerLine(int width, string label, string status)

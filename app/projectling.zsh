@@ -1,11 +1,15 @@
 if [[ -n "${ZSH_VERSION:-}" ]]; then
   typeset -g PROJECTLING_HOME="${PROJECTLING_HOME:-${AITERMUX_HOME:-$HOME/AItermux}/projectling}"
-  typeset -g PROJECTLING_RUNNER="$PROJECTLING_HOME/run.sh"
+  typeset -g PROJECTLING_RUNNER="${PROJECTLING_RUNNER:-$PROJECTLING_HOME/run.sh}"
+  typeset -g PROJECTLING_ZSH_SOURCE="${${(%):-%N}:A}"
+  typeset -g PROJECTLING_HOOK_VERSION="2026.07.15.3"
   typeset -g PROJECTLING_PENDING_COMMAND_FILE="${PROJECTLING_PENDING_COMMAND_FILE:-$PROJECTLING_HOME/config/pending-command.json}"
   typeset -g PROJECTLING_DISPATCH_KIND=""
   typeset -g PROJECTLING_TTY_DEV="/dev/tty"
   typeset -g PROJECTLING_MAX_INLINE_CHARS="${PROJECTLING_MAX_INLINE_CHARS:-4000}"
-  typeset -ga PROJECTLING_EDIT_HISTORY=()
+  if (( ! ${+PROJECTLING_EDIT_HISTORY} )); then
+    typeset -ga PROJECTLING_EDIT_HISTORY=()
+  fi
   typeset -g PROJECTLING_EDIT_BROWSE_POS=0
   typeset -g PROJECTLING_EDIT_DRAFT=""
 
@@ -22,13 +26,16 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
       if [[ -n "$saved_stty" ]]; then
         stty -echoctl intr '^[' <"$PROJECTLING_TTY_DEV" >/dev/null 2>&1 || true
       fi
-      printf '\033[5 q' >"$PROJECTLING_TTY_DEV" 2>/dev/null || true
-      "$PROJECTLING_RUNNER" "$@" <"$PROJECTLING_TTY_DEV" >"$PROJECTLING_TTY_DEV"
-      rc=$?
-      printf '\033[0 q' >"$PROJECTLING_TTY_DEV" 2>/dev/null || true
-      if [[ -n "$saved_stty" ]]; then
-        stty "$saved_stty" <"$PROJECTLING_TTY_DEV" >/dev/null 2>&1 || true
-      fi
+      {
+        printf '\033[5 q' >"$PROJECTLING_TTY_DEV" 2>/dev/null || true
+        "$PROJECTLING_RUNNER" "$@" <"$PROJECTLING_TTY_DEV" >"$PROJECTLING_TTY_DEV"
+        rc=$?
+      } always {
+        printf '\033[0 q' >"$PROJECTLING_TTY_DEV" 2>/dev/null || true
+        if [[ -n "$saved_stty" ]]; then
+          stty "$saved_stty" <"$PROJECTLING_TTY_DEV" >/dev/null 2>&1 || true
+        fi
+      }
       return $rc
     else
       "$PROJECTLING_RUNNER" "$@"
@@ -43,7 +50,45 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
   }
 
   projectling_settings() {
-    projectling_run_on_tty shell-settings
+    projectling_run_local_command settings "${1:-root}"
+  }
+
+  projectling_status() {
+    projectling_run_on_tty status "$@"
+  }
+
+  projectling_reload() {
+    local source_path="${PROJECTLING_ZSH_SOURCE:-$PROJECTLING_HOME/projectling.zsh}"
+    if [[ ! -f "$source_path" ]]; then
+      source_path="$PROJECTLING_HOME/projectling.zsh"
+    fi
+    [[ -f "$source_path" ]] || {
+      print -u2 -- "projectling hook 不存在：$source_path"
+      return 1
+    }
+    source "$source_path" || return $?
+    print -- "ProjectLing Zsh 已重载 · hook $PROJECTLING_HOOK_VERSION"
+  }
+
+  projectling_update() {
+    local repo_dir="$PROJECTLING_HOME"
+    local current_remote=''
+    if [[ ! -d "$repo_dir/.git" && -d "${repo_dir:h}/.git" ]]; then
+      repo_dir="${repo_dir:h}"
+    fi
+    if [[ -d "$repo_dir/.git" ]] && command -v git >/dev/null 2>&1; then
+      current_remote="$(git -C "$repo_dir" remote get-url origin 2>/dev/null || true)"
+      if [[ "${(L)current_remote}" == *projectling-private* ]]; then
+        print -u2 -- "当前是 ProjectLing 私有开发工作树；Kit2 更新器固定跟随公开仓，本次已停止，未改写 remote 或工作树。"
+        return 2
+      fi
+    fi
+    if ! command -v aitermux-cli-install >/dev/null 2>&1; then
+      print -u2 -- "未找到 aitermux-cli-install；请从 AITermux MOTD 设置页更新 ProjectLing。"
+      return 1
+    fi
+    aitermux-cli-install update-projectling || return $?
+    projectling_reload
   }
 
   projectling_run_local_command() {
@@ -51,7 +96,37 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
     local extra="${2:-}"
     case "$kind" in
       settings)
-        projectling_run_on_tty shell-settings
+        local settings_tab
+        settings_tab="$(projectling_trim_text "$extra")"
+        settings_tab="${(L)settings_tab}"
+        case "$settings_tab" in
+          ''|root)
+            projectling_run_on_tty shell-settings
+            ;;
+          api|main|main_api|main-api|planner|executor|executor_api|executor-api|support|gpt|codex|openai|deepseek|gemini|grok|xai|gemini_params|gemini-params|persona|role|system|settings|websearch|web_search)
+            projectling_run_on_tty shell-settings --tab "$settings_tab"
+            ;;
+          web-search)
+            projectling_run_on_tty shell-settings --tab websearch
+            ;;
+          *)
+            print -u2 -- "未知 Settings 页面：$settings_tab（可用 main / executor / api / gpt / gemini / grok / deepseek / role / system / websearch）"
+            return 2
+            ;;
+        esac
+        ;;
+      status)
+        if [[ -n "$extra" ]]; then
+          projectling_run_on_tty status ${(z)extra}
+        else
+          projectling_run_on_tty status
+        fi
+        ;;
+      reload)
+        projectling_reload
+        ;;
+      update)
+        projectling_update
         ;;
       help)
         projectling_run_on_tty help
@@ -122,8 +197,52 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
     lowered="${(L)trimmed}"
 
     case "$trimmed" in
+      /settings\ *)
+        printf '%s' "settings:${trimmed#/settings }"
+        return 0
+        ;;
       /settings)
         printf '%s' "settings"
+        return 0
+        ;;
+      /role)
+        printf '%s' "settings:role"
+        return 0
+        ;;
+      /deepseek)
+        printf '%s' "settings:deepseek"
+        return 0
+        ;;
+      /gemini)
+        printf '%s' "settings:gemini"
+        return 0
+        ;;
+      /gpt|/codex|/openai)
+        printf '%s' "settings:gpt"
+        return 0
+        ;;
+      /grok|/xai)
+        printf '%s' "settings:grok"
+        return 0
+        ;;
+      /websearch|/web-search)
+        printf '%s' "settings:websearch"
+        return 0
+        ;;
+      /status\ *)
+        printf '%s' "status:${trimmed#/status }"
+        return 0
+        ;;
+      /status)
+        printf '%s' "status"
+        return 0
+        ;;
+      /reload|/projectling-reload)
+        printf '%s' "reload"
+        return 0
+        ;;
+      /update|/projectling-update)
+        printf '%s' "update"
         return 0
         ;;
       /model\ *)
@@ -348,6 +467,14 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
     local mode="$2"
     local local_mode="$mode"
     local local_arg=''
+    if [[ "$local_mode" == settings:* ]]; then
+      local_arg="${local_mode#settings:}"
+      local_mode="settings"
+    fi
+    if [[ "$local_mode" == status:* ]]; then
+      local_arg="${local_mode#status:}"
+      local_mode="status"
+    fi
     if [[ "$local_mode" == model:* ]]; then
       local_arg="${local_mode#model:}"
       local_mode="model"
@@ -380,7 +507,7 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
     print
     BUFFER=''
     CURSOR=0
-    if [[ "$local_mode" == "settings" || "$local_mode" == "model" || "$local_mode" == "models" || "$local_mode" == "api-test" || "$local_mode" == "codexurl" || "$local_mode" == "help" || "$local_mode" == "confirm" || "$local_mode" == "deny" ]]; then
+    if [[ "$local_mode" == "settings" || "$local_mode" == "status" || "$local_mode" == "reload" || "$local_mode" == "update" || "$local_mode" == "model" || "$local_mode" == "models" || "$local_mode" == "api-test" || "$local_mode" == "codexurl" || "$local_mode" == "help" || "$local_mode" == "confirm" || "$local_mode" == "deny" ]]; then
       projectling_run_local_command "$local_mode" "$local_arg"
     elif [[ "$local_mode" == "send" ]]; then
       projectling_dispatch_input "$local_arg" "send"
@@ -441,7 +568,15 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
     fi
     special_kind="$(projectling_special_command_kind "$raw_input")" || special_kind=''
     if [[ -n "$special_kind" ]]; then
-      if [[ "$special_kind" == model:* ]]; then
+      if [[ "$special_kind" == settings:* ]]; then
+        projectling_run_local_command "settings" "${special_kind#settings:}"
+      elif [[ "$special_kind" == status:* ]]; then
+        projectling_run_local_command "status" "${special_kind#status:}"
+      elif [[ "$special_kind" == models:* ]]; then
+        projectling_run_local_command "models" "${special_kind#models:}"
+      elif [[ "$special_kind" == api-test:* ]]; then
+        projectling_run_local_command "api-test" "${special_kind#api-test:}"
+      elif [[ "$special_kind" == model:* ]]; then
         projectling_run_local_command "model" "${special_kind#model:}"
       elif [[ "$special_kind" == codexurl:* ]]; then
         projectling_run_local_command "codexurl" "${special_kind#codexurl:}"
@@ -465,8 +600,9 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
   }
 
   if [[ -o interactive ]]; then
-    if (( ! ${+widgets[projectling-accept-line]} )); then
+    if (( ! ${+widgets[projectling-orig-accept-line]} )); then
       zle -A accept-line projectling-orig-accept-line
+    fi
       projectling-accept-line() {
         local raw_input="$BUFFER"
         if projectling_classify_buffer "$raw_input"; then
@@ -486,6 +622,5 @@ if [[ -n "${ZSH_VERSION:-}" ]]; then
       bindkey '^[[4~' projectling-edit-next
       bindkey '^[OF' projectling-edit-next
       bindkey '^[[F' projectling-edit-next
-    fi
   fi
 fi

@@ -1,7 +1,16 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -euo pipefail
 
-SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [ -L "$SCRIPT_PATH" ]; do
+  SCRIPT_LINK_DIR="$(CDPATH='' cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd)"
+  SCRIPT_LINK_TARGET="$(readlink -- "$SCRIPT_PATH")"
+  case "$SCRIPT_LINK_TARGET" in
+    /*) SCRIPT_PATH="$SCRIPT_LINK_TARGET" ;;
+    *) SCRIPT_PATH="$SCRIPT_LINK_DIR/$SCRIPT_LINK_TARGET" ;;
+  esac
+done
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd)"
 SCRIPT_AIDEBUG_DIR="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)"
 SCRIPT_PROJECTLING_DIR="$(CDPATH='' cd -- "$SCRIPT_AIDEBUG_DIR/.." && pwd)"
 if [ -f "$SCRIPT_PROJECTLING_DIR/core.py" ]; then

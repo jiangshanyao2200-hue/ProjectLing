@@ -10,7 +10,7 @@
 - Python 3.11 或兼容 Python 3，可通过 `python`、`python3` 或 `py -3` 找到。
 - 也可设置环境变量 `PROJECTLING_PYTHON` 指向 Python 可执行文件。
 
-首次启动后输入 `/settings`，配置 API Key、Provider、模型与搜索服务。
+首次启动后输入 `/settings`，先选择主星或执行星（辅星），再分别配置 Provider、API Key、模型和场景预设；切换星位不会覆盖另一颗星。随后再配置搜索服务。
 
 ## 诊断
 
@@ -21,4 +21,3 @@ Windows\aidebug.cmd health --json
 ```
 
 不要单独移动 EXE。`PROJECT凌.exe`、`app/` 和 `Windows/` 必须保持相对位置。
-

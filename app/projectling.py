@@ -27,6 +27,11 @@ MODEL_REQUEST_AUDIT_LOG = Path(
     os.environ.get("AITERMUX_AIDEBUG_DIR", str(PROJECTLING_DIR / "aidebug"))
 ).expanduser() / "logs" / "model-requests.jsonl"
 _MODEL_REQUEST_AUDIT_LOCK = threading.Lock()
+_TRANSPORT_SECRET_RE = re.compile(
+    r"(?i)(?:\bsk-[A-Za-z0-9_-]{8,}\b|\bghp_[A-Za-z0-9]{20,}\b|"
+    r"\bgithub_pat_[A-Za-z0-9_]{20,}\b|\bAIza[A-Za-z0-9_-]{12,}\b|"
+    r"Bearer\s+[A-Za-z0-9._-]{8,})"
+)
 
 from tooling import (
     DEFAULT_MEMORY_MAX_BYTES,
@@ -83,19 +88,19 @@ DEFAULT_COMMAND_NOT_FOUND_PROMPT = """\
 """
 
 DEFAULT_ROLE_PROMPT = (
-    "当前主角色为 {persona_main_zh} / {persona_main_en}。"
-    "辅导位为 {persona_liaison_zh} / {persona_liaison_en}。"
+    "当前主星为 {persona_main_zh} / {persona_main_en}。"
+    "执行星为 {persona_liaison_zh} / {persona_liaison_en}。"
     "当前聊天使用共享 entries 上下文，不再按角色维护独立外置上下文。"
-    "主角色负责默认对外回复；辅导位默认静默，不抢答、不把普通聊天写成多人轮流发言。"
-    "简单、直白、微小的问答或单步小任务必须由主角色直接处理，不要默认交给 X-Link 或执行位。"
+    "主星负责默认对外回复；执行星默认静默，不抢答、不把普通聊天写成多人轮流发言。"
+    "简单、直白、微小的问答或单步小任务必须由主星直接处理，不要默认交给 X-Link 或执行星。"
     "X-Link 只用于复杂编程、复杂任务、系统排查、多步骤修改、关键风险权衡或明确的角色联动。"
-    "需要切换说话者、内部决策咨询、委派任务、发送消息或主动联系辅导位时，优先调用 link 工具；persona_link 只作为兼容入口。"
-    "用户说“问问她/他/它”“你没问”“用工具问问”“让辅导位回答”这类指代式请求，也算联动，不要当成普通闲聊。"
-    "link.action=switch 用于主角色与辅导位之间切换当前可见说话者；"
+    "需要切换说话者、内部决策咨询、委派任务、发送消息或主动联系执行星时，优先调用 link 工具；persona_link 只作为兼容入口。"
+    "用户说“问问她/他/它”“你没问”“用工具问问”“让执行星回答”这类指代式请求，也算联动，不要当成普通闲聊。"
+    "link.action=switch 用于主星与执行星之间切换当前可见说话者；"
     "action=liaison 用于计划评审、重大决策、工具结果矛盾、复杂代码修改、上下文治理、风险权衡；"
-    "action=mission 用于把明确任务记录为辅导位任务；action=send/contact 用于给辅导位发消息或主动联系。"
+    "action=mission 用于把明确任务记录为执行星任务；action=send/contact 用于给执行星发消息或主动联系。"
     "contextmanage 用于按 entry id 查看、replace、fold 和 status 共享上下文；replace 是摘要替换，不是删除。"
-    "不要在正文里假装已经询问辅导位；需要联动时直接发起工具调用。"
+    "不要在正文里假装已经询问执行星；需要联动时直接发起工具调用。"
     "角色信息只用于轻微语气色彩，不要写成角色扮演，不要输出括号中的动作、表情、姿态或第三人称描述。"
     "普通寒暄直接自然回应，不要展开成终端表演，不要模拟命令执行或目录浏览。"
     "回答仍要自然、准确、直接、可执行；不要显式说明自己在扮演谁。"
@@ -126,16 +131,27 @@ LEGACY_CONTEXT_MIGRATION_SENTINEL = ".legacy-context-migrated-v1"
 PROJECTLING_CONTEXT_MODE_DEFAULT = "entries"
 PROJECTLING_API_PROVIDER_DEFAULT = "deepseek"
 PROJECTLING_COLLAB_MODE_DEFAULT = "standard"
+PROJECTLING_RELAY_BASE_URL_DEFAULT = "https://fast.aieyra.cn/v1"
 DEEPSEEK_FAST_MODEL = "deepseek-v4-flash"
 DEEPSEEK_PRECISE_MODEL = "deepseek-v4-pro"
 DEEPSEEK_REASONING_EFFORT_DEFAULT = "high"
-GEMINI_DEFAULT_BASE_URL = "https://fast.aieyra.cn/v1"
+GPT_DEFAULT_BASE_URL = PROJECTLING_RELAY_BASE_URL_DEFAULT
+GPT_FAST_MODEL = "gpt-5.5-codex"
+GPT_PRECISE_MODEL = "gpt-5.6-codex"
+GPT_REASONING_EFFORT_DEFAULT = "high"
+GEMINI_DEFAULT_BASE_URL = PROJECTLING_RELAY_BASE_URL_DEFAULT
 GEMINI_FAST_MODEL = "gemini-2.5-flash"
 GEMINI_PRECISE_MODEL = "gemini-2.5-pro"
 GEMINI_REASONING_EFFORT_DEFAULT = "high"
-ADVISORLING_CONTEXT_MAX_CHARS = 512 * 1024
-ADVISORLING_CONTEXT_MAX_TOKENS = 240_000
-ADVISORLING_COMPACT_TARGET_CHARS = 96_000
+GROK_DEFAULT_BASE_URL = PROJECTLING_RELAY_BASE_URL_DEFAULT
+GROK_FAST_MODEL = "grok-4-fast"
+GROK_PRECISE_MODEL = "grok-4"
+GROK_REASONING_EFFORT_DEFAULT = "medium"
+STAR_PARAMETER_PROFILE_DEFAULT = "default"
+STAR_PARAMETER_PROFILE_ORDER = ("default", "coding", "data", "daily", "chat", "creative")
+ADVISORLING_CONTEXT_MAX_CHARS = 128_000
+ADVISORLING_CONTEXT_MAX_TOKENS = 100_000
+ADVISORLING_COMPACT_TARGET_CHARS = 48_000
 CONTEXT_COMPACT_HINT_BYTES = 300 * 1024
 CONTEXT_COMPACT_REQUIRE_BYTES = 500 * 1024
 FULL_CONTEXT_COMPACT_HINT_BYTES = 900 * 1024
@@ -161,6 +177,10 @@ STREAM_REASONING_POST_CONTENT_CHUNK_LIMIT = 80
 STREAM_CONTENT_CHUNK_LIMIT = 200
 STREAM_TOTAL_CHUNK_LIMIT = 520
 STREAM_TOTAL_SECONDS_LIMIT = 45.0
+STREAM_REASONING_CHAR_HARD_LIMIT = 262144
+STREAM_CONTENT_CHAR_HARD_LIMIT = 262144
+STREAM_CHUNK_HARD_LIMIT = 262144
+STREAM_TOTAL_SECONDS_HARD_LIMIT = 900.0
 MAX_PLAN_REVIEWS_PER_TURN = 8
 PROJECT_ENV_OVERRIDE_KEYS = frozenset(
     {
@@ -176,6 +196,30 @@ PROJECT_ENV_OVERRIDE_KEYS = frozenset(
         "DEEPSEEK_ENABLE_SSE",
         "PROJECTLING_API_PROVIDER",
         "PROJECTLING_PROVIDER",
+        "PROJECTLING_MAIN_PROVIDER",
+        "PROJECTLING_MAIN_API_PROVIDER",
+        "PROJECTLING_MAIN_API_KEY",
+        "PROJECTLING_MAIN_BASE_URL",
+        "PROJECTLING_MAIN_MODEL",
+        "PROJECTLING_MAIN_PARAMETER_PROFILE",
+        "PROJECTLING_MAIN_PARAMS_JSON",
+        "PROJECTLING_MAIN_TIMEOUT_SECONDS",
+        "PROJECTLING_MAIN_RETRY_COUNT",
+        "PROJECTLING_MAIN_ENABLE_SSE",
+        "PROJECTLING_EXECUTOR_PROVIDER",
+        "PROJECTLING_EXECUTOR_API_PROVIDER",
+        "PROJECTLING_EXECUTOR_API_KEY",
+        "PROJECTLING_EXECUTOR_BASE_URL",
+        "PROJECTLING_EXECUTOR_MODEL",
+        "PROJECTLING_EXECUTOR_PARAMETER_PROFILE",
+        "PROJECTLING_EXECUTOR_PARAMS_JSON",
+        "PROJECTLING_EXECUTOR_TIMEOUT_SECONDS",
+        "PROJECTLING_EXECUTOR_RETRY_COUNT",
+        "PROJECTLING_EXECUTOR_ENABLE_SSE",
+        "GPT_API_KEY",
+        "GPT_BASE_URL",
+        "GPT_PLANNER_MODEL",
+        "GPT_EXECUTOR_MODEL",
         "GEMINI_API_KEY",
         "GEMINI_BASE_URL",
         "GEMINI_PLANNER_MODEL",
@@ -192,6 +236,10 @@ PROJECT_ENV_OVERRIDE_KEYS = frozenset(
         "GEMINI_RESPONSE_MIME_TYPE",
         "GEMINI_REASONING_EFFORT",
         "GEMINI_EXTRA_BODY_JSON",
+        "GROK_API_KEY",
+        "GROK_BASE_URL",
+        "GROK_PLANNER_MODEL",
+        "GROK_EXECUTOR_MODEL",
         "VOLC_WEBSEARCH_SUMMARY_KEY",
         "VOLC_WEBSEARCH_WEB_KEY",
         "VOLC_WEBSEARCH_ENDPOINT",
@@ -227,6 +275,21 @@ class PromptBundle:
 
 
 @dataclass(frozen=True)
+class StarAPIConfig:
+    slot: str
+    provider: str
+    api_key: str | None
+    base_url: str
+    model: str
+    parameter_profile: str
+    parameters: dict[str, Any]
+    timeout_seconds: float
+    retry_count: int
+    enable_sse: bool
+    key_source: str = "provider"
+
+
+@dataclass(frozen=True)
 class ProjectLingConfig:
     root_dir: Path
     config_dir: Path
@@ -244,6 +307,12 @@ class ProjectLingConfig:
     base_url: str
     model: str
     api_provider: str
+    main_api: StarAPIConfig
+    executor_api: StarAPIConfig
+    gpt_api_key: str | None
+    gpt_base_url: str
+    gpt_planner_model: str
+    gpt_executor_model: str
     deepseek_api_key: str | None
     deepseek_base_url: str
     deepseek_planner_model: str
@@ -262,6 +331,10 @@ class ProjectLingConfig:
     gemini_response_mime_type: str
     gemini_reasoning_effort: str
     gemini_extra_body_json: str
+    grok_api_key: str | None
+    grok_base_url: str
+    grok_planner_model: str
+    grok_executor_model: str
     temperature: float
     reasoning_effort: str
     max_tokens: int | None
@@ -483,18 +556,169 @@ def _api_provider_value(raw: str | None) -> str:
     aliases = {
         "": PROJECTLING_API_PROVIDER_DEFAULT,
         "default": PROJECTLING_API_PROVIDER_DEFAULT,
+        "openai": "gpt",
+        "openai-codex": "gpt",
+        "codex": "gpt",
+        "chatgpt": "gpt",
         "ds": "deepseek",
         "deepseek-v4": "deepseek",
         "gemini-openai": "gemini",
         "gemini-relay": "gemini",
+        "xai": "grok",
+        "x.ai": "grok",
     }
     value = aliases.get(value, value)
-    if value in {"deepseek", "gemini"}:
+    if value in {"gpt", "gemini", "grok", "deepseek"}:
         return value
     return PROJECTLING_API_PROVIDER_DEFAULT
 
 
-def _collab_mode_value(raw: str | None) -> str:
+def _provider_label_value(provider: str | None) -> str:
+    return {
+        "gpt": "GPT / Codex",
+        "gemini": "Gemini",
+        "grok": "Grok",
+        "deepseek": "DeepSeek",
+    }.get(_api_provider_value(provider), "DeepSeek")
+
+
+def _provider_default_base_url(provider: str | None) -> str:
+    return {
+        "gpt": GPT_DEFAULT_BASE_URL,
+        "gemini": GEMINI_DEFAULT_BASE_URL,
+        "grok": GROK_DEFAULT_BASE_URL,
+        "deepseek": "https://api.deepseek.com",
+    }[_api_provider_value(provider)]
+
+
+def _provider_default_model(provider: str | None, slot: str) -> str:
+    normalized_slot = "main" if str(slot or "").strip().lower() in {"main", "planner"} else "executor"
+    models = {
+        "gpt": (GPT_PRECISE_MODEL, GPT_FAST_MODEL),
+        "gemini": (GEMINI_PRECISE_MODEL, GEMINI_FAST_MODEL),
+        "grok": (GROK_PRECISE_MODEL, GROK_FAST_MODEL),
+        "deepseek": (DEEPSEEK_PRECISE_MODEL, DEEPSEEK_FAST_MODEL),
+    }
+    main_model, executor_model = models[_api_provider_value(provider)]
+    return main_model if normalized_slot == "main" else executor_model
+
+
+def _parameter_profile_value(raw: str | None) -> str:
+    value = str(raw or "").strip().lower()
+    aliases = {
+        "": STAR_PARAMETER_PROFILE_DEFAULT,
+        "auto": "default",
+        "balanced": "default",
+        "programming": "coding",
+        "code": "coding",
+        "编程": "coding",
+        "数据": "data",
+        "analysis": "data",
+        "日常": "daily",
+        "general": "daily",
+        "闲聊": "chat",
+        "conversation": "chat",
+        "想象力": "creative",
+        "creativity": "creative",
+    }
+    value = aliases.get(value, value)
+    return value if value in STAR_PARAMETER_PROFILE_ORDER else STAR_PARAMETER_PROFILE_DEFAULT
+
+
+def _normalize_gpt_reasoning_effort(raw: str | None, *, model: str = "") -> str:
+    value = str(raw or "").strip().lower()
+    aliases = {
+        "": GPT_REASONING_EFFORT_DEFAULT,
+        "default": GPT_REASONING_EFFORT_DEFAULT,
+        "normal": "medium",
+        "med": "medium",
+        "very-high": "xhigh",
+        "very_high": "xhigh",
+        "max": "xhigh",
+        "maximum": "xhigh",
+    }
+    value = aliases.get(value, value)
+    model_value = str(model or "").strip().lower()
+    allowed = {"none", "low", "medium", "high", "xhigh"}
+    if "5.6" in model_value:
+        allowed.add("ultra")
+    if value == "ultra" and "5.5" in model_value:
+        value = "xhigh"
+    return value if value in allowed else GPT_REASONING_EFFORT_DEFAULT
+
+
+def _normalize_grok_reasoning_effort(raw: str | None) -> str:
+    value = str(raw or "").strip().lower()
+    aliases = {
+        "": GROK_REASONING_EFFORT_DEFAULT,
+        "default": GROK_REASONING_EFFORT_DEFAULT,
+        "off": "none",
+        "disabled": "none",
+        "normal": "medium",
+        "max": "high",
+    }
+    value = aliases.get(value, value)
+    return value if value in {"none", "low", "medium", "high"} else GROK_REASONING_EFFORT_DEFAULT
+
+
+def _parameter_profile_defaults(provider: str, profile: str, *, model: str = "") -> dict[str, Any]:
+    normalized_provider = _api_provider_value(provider)
+    normalized_profile = _parameter_profile_value(profile)
+    sampling = {
+        "default": {"temperature": 0.2, "top_p": 0.9},
+        "coding": {"temperature": 0.1, "top_p": 0.8},
+        "data": {"temperature": 0.0, "top_p": 0.7},
+        "daily": {"temperature": 0.4, "top_p": 0.9},
+        "chat": {"temperature": 0.7, "top_p": 0.95},
+        "creative": {"temperature": 1.0, "top_p": 1.0},
+    }[normalized_profile]
+    if normalized_provider == "gpt":
+        effort = {
+            "default": "high",
+            "coding": "high",
+            "data": "xhigh",
+            "daily": "medium",
+            "chat": "low",
+            "creative": "high",
+        }[normalized_profile]
+        verbosity = {
+            "default": "medium",
+            "coding": "low",
+            "data": "medium",
+            "daily": "medium",
+            "chat": "low",
+            "creative": "high",
+        }[normalized_profile]
+        return {
+            "reasoning_effort": _normalize_gpt_reasoning_effort(effort, model=model),
+            "verbosity": verbosity,
+        }
+    if normalized_provider == "gemini":
+        top_k = {
+            "default": 40,
+            "coding": 24,
+            "data": 16,
+            "daily": 40,
+            "chat": 48,
+            "creative": 64,
+        }[normalized_profile]
+        reasoning = "low" if normalized_profile in {"chat", "daily"} else "high"
+        return {**sampling, "top_k": top_k, "reasoning_effort": reasoning}
+    if normalized_provider == "grok":
+        reasoning = {
+            "default": "medium",
+            "coding": "high",
+            "data": "high",
+            "daily": "medium",
+            "chat": "low",
+            "creative": "medium",
+        }[normalized_profile]
+        return {**sampling, "reasoning_effort": reasoning}
+    reasoning = "max" if normalized_profile in {"data", "creative"} else "high"
+    return {"temperature": sampling["temperature"], "reasoning_effort": reasoning}
+
+
+def _collab_mode_strict_value(raw: str | None) -> str | None:
     value = str(raw or "").strip().lower()
     aliases = {
         "1": "rapid",
@@ -515,7 +739,11 @@ def _collab_mode_value(raw: str | None) -> str:
     value = aliases.get(value, value)
     if value in {"rapid", "standard", "precise"}:
         return value
-    return PROJECTLING_COLLAB_MODE_DEFAULT
+    return None
+
+
+def _collab_mode_value(raw: str | None) -> str:
+    return _collab_mode_strict_value(raw) or PROJECTLING_COLLAB_MODE_DEFAULT
 
 
 def _normalize_reasoning_effort(raw: str | None) -> str:
@@ -585,6 +813,224 @@ def _csv_tuple(raw: str | None) -> tuple[str, ...]:
     if not text:
         return ()
     return tuple(item.strip() for item in text.split(",") if item.strip())
+
+
+def _json_object_value(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return json.loads(json.dumps(raw, ensure_ascii=False))
+    text = str(raw or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _merge_parameter_objects(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = json.loads(json.dumps(base, ensure_ascii=False))
+
+    def merge_nested(target: dict[str, Any], source: dict[str, Any]) -> None:
+        for nested_key, nested_value in source.items():
+            existing = target.get(nested_key)
+            if isinstance(existing, dict) and isinstance(nested_value, dict):
+                merge_nested(existing, nested_value)
+            else:
+                target[nested_key] = nested_value
+
+    for key, value in override.items():
+        if key == "extra_body" and isinstance(value, dict) and isinstance(merged.get(key), dict):
+            nested = dict(merged[key])
+            merge_nested(nested, value)
+            merged[key] = nested
+        else:
+            merged[key] = value
+    return merged
+
+
+def _normalize_star_parameters(
+    provider: str,
+    profile: str,
+    *,
+    model: str,
+    custom: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized_provider = _api_provider_value(provider)
+    values = _merge_parameter_objects(
+        _parameter_profile_defaults(normalized_provider, profile, model=model),
+        custom or {},
+    )
+    allowed = {
+        "gpt": {"reasoning_effort", "verbosity", "max_tokens", "extra_body"},
+        "gemini": {
+            "temperature",
+            "top_p",
+            "top_k",
+            "candidate_count",
+            "seed",
+            "presence_penalty",
+            "frequency_penalty",
+            "stop",
+            "response_mime_type",
+            "reasoning_effort",
+            "max_tokens",
+            "extra_body",
+        },
+        "grok": {
+            "temperature",
+            "top_p",
+            "presence_penalty",
+            "frequency_penalty",
+            "seed",
+            "stop",
+            "reasoning_effort",
+            "max_tokens",
+            "extra_body",
+        },
+        "deepseek": {
+            "temperature",
+            "top_p",
+            "presence_penalty",
+            "frequency_penalty",
+            "stop",
+            "reasoning_effort",
+            "max_tokens",
+            "extra_body",
+        },
+    }[normalized_provider]
+    values = {key: value for key, value in values.items() if key in allowed}
+
+    cleaned: dict[str, Any] = {}
+    for key in ("temperature", "top_p", "presence_penalty", "frequency_penalty"):
+        if key not in values:
+            continue
+        bounds = {
+            "temperature": (0.0, 2.0),
+            "top_p": (0.0, 1.0),
+            "presence_penalty": (-2.0, 2.0),
+            "frequency_penalty": (-2.0, 2.0),
+        }[key]
+        parsed = _optional_float_value(str(values[key]), min_value=bounds[0], max_value=bounds[1])
+        if parsed is not None:
+            cleaned[key] = parsed
+    for key, minimum, maximum in (
+        ("top_k", 1, None),
+        ("candidate_count", 1, 8),
+        ("seed", 0, None),
+        ("max_tokens", 1, None),
+    ):
+        if key not in values:
+            continue
+        parsed = _optional_int_value(str(values[key]), min_value=minimum, max_value=maximum)
+        if parsed is not None:
+            cleaned[key] = parsed
+
+    if "stop" in values:
+        raw_stop = values.get("stop")
+        if isinstance(raw_stop, str):
+            stop = [item.strip() for item in raw_stop.split(",") if item.strip()]
+        elif isinstance(raw_stop, (list, tuple)):
+            stop = [str(item).strip() for item in raw_stop if str(item).strip()]
+        else:
+            stop = []
+        if stop:
+            cleaned["stop"] = stop[:16]
+    if "response_mime_type" in values:
+        mime = str(values.get("response_mime_type") or "").strip()
+        if mime:
+            cleaned["response_mime_type"] = mime[:160]
+    if "extra_body" in values and isinstance(values.get("extra_body"), dict):
+        cleaned["extra_body"] = json.loads(json.dumps(values["extra_body"], ensure_ascii=False))
+
+    effort = values.get("reasoning_effort")
+    if normalized_provider == "gpt":
+        cleaned["reasoning_effort"] = _normalize_gpt_reasoning_effort(str(effort or ""), model=model)
+        verbosity = str(values.get("verbosity") or "medium").strip().lower()
+        cleaned["verbosity"] = verbosity if verbosity in {"low", "medium", "high"} else "medium"
+    elif normalized_provider == "gemini":
+        cleaned["reasoning_effort"] = _normalize_gemini_reasoning_effort(str(effort or ""))
+    elif normalized_provider == "grok":
+        cleaned["reasoning_effort"] = _normalize_grok_reasoning_effort(str(effort or ""))
+    else:
+        cleaned["reasoning_effort"] = _normalize_reasoning_effort(str(effort or ""))
+    return cleaned
+
+
+def _star_api_config_from_merged(
+    merged: dict[str, str],
+    *,
+    slot: str,
+    legacy_provider: str,
+    credentials: dict[str, tuple[str | None, str]],
+    models: dict[str, tuple[str, str]],
+    legacy_parameters: dict[str, dict[str, Any]],
+    default_timeout_seconds: float,
+    default_retry_count: int,
+    default_enable_sse: bool,
+) -> StarAPIConfig:
+    normalized_slot = "main" if str(slot or "").strip().lower() in {"main", "planner"} else "executor"
+    env_slot = "MAIN" if normalized_slot == "main" else "EXECUTOR"
+    provider = _api_provider_value(
+        _first_non_empty(
+            merged.get(f"PROJECTLING_{env_slot}_PROVIDER"),
+            merged.get(f"PROJECTLING_{env_slot}_API_PROVIDER"),
+            legacy_provider,
+        )
+    )
+    provider_key, provider_base_url = credentials[provider]
+    slot_key = _first_non_empty(merged.get(f"PROJECTLING_{env_slot}_API_KEY"))
+    slot_base_url = _first_non_empty(merged.get(f"PROJECTLING_{env_slot}_BASE_URL"))
+    model_index = 0 if normalized_slot == "main" else 1
+    model = _first_non_empty(
+        merged.get(f"PROJECTLING_{env_slot}_MODEL"),
+        models[provider][model_index],
+        _provider_default_model(provider, normalized_slot),
+    ) or _provider_default_model(provider, normalized_slot)
+    profile = _parameter_profile_value(merged.get(f"PROJECTLING_{env_slot}_PARAMETER_PROFILE"))
+    star_profile_raw = _first_non_empty(merged.get(f"PROJECTLING_{env_slot}_PARAMETER_PROFILE"))
+    star_params_raw = _first_non_empty(merged.get(f"PROJECTLING_{env_slot}_PARAMS_JSON"))
+    inherited_parameters = {} if star_profile_raw is not None or star_params_raw is not None else legacy_parameters.get(provider, {})
+    custom_parameters = _merge_parameter_objects(
+        inherited_parameters,
+        _json_object_value(star_params_raw),
+    )
+    parameters = _normalize_star_parameters(provider, profile, model=model, custom=custom_parameters)
+
+    timeout_raw = _first_non_empty(
+        merged.get(f"PROJECTLING_{env_slot}_TIMEOUT_SECONDS"),
+        str(default_timeout_seconds),
+    )
+    try:
+        timeout_seconds = max(5.0, min(86400.0, float(timeout_raw or default_timeout_seconds)))
+    except (TypeError, ValueError):
+        timeout_seconds = default_timeout_seconds
+    retry_raw = _first_non_empty(
+        merged.get(f"PROJECTLING_{env_slot}_RETRY_COUNT"),
+        str(default_retry_count),
+    )
+    try:
+        retry_count = min(10, max(0, int(retry_raw or default_retry_count)))
+    except (TypeError, ValueError):
+        retry_count = default_retry_count
+    enable_sse = _env_bool(
+        merged.get(f"PROJECTLING_{env_slot}_ENABLE_SSE"),
+        default=default_enable_sse,
+    )
+    api_key = slot_key or provider_key
+    return StarAPIConfig(
+        slot=normalized_slot,
+        provider=provider,
+        api_key=api_key,
+        base_url=(slot_base_url or provider_base_url or _provider_default_base_url(provider)).rstrip("/"),
+        model=model,
+        parameter_profile=profile,
+        parameters=parameters,
+        timeout_seconds=timeout_seconds,
+        retry_count=retry_count,
+        enable_sse=enable_sse,
+        key_source="slot" if slot_key else "provider" if provider_key else "unset",
+    )
 
 
 # --- Card Rendering ---------------------------------------------------------
@@ -683,8 +1129,8 @@ class PersonaBundle:
     @property
     def dualstar_label(self) -> str:
         if self.liaison is None:
-            return f"主角色：{self.main_label}；辅导位：未配置"
-        return f"主角色：{self.main_label}；辅导位：{self.liaison_label}"
+            return f"主星：{self.main_label}；执行星：未配置"
+        return f"主星：{self.main_label}；执行星：{self.liaison_label}"
 
     @property
     def pair_label(self) -> str:
@@ -704,22 +1150,22 @@ class PersonaBundle:
     def brief(self) -> str:
         return (
             f"{self.dualstar_label}。"
-            "这是单主角色对外结构，不是融合身份，也不是群聊。"
-            "当前普通用户消息写入共享 entries 上下文；辅导位默认静默，只能通过 link 工具按需联动。"
-            "辅导建议要体现在更稳的判断里，而不是抢答或刷存在感。"
+            "这是单主星对外结构，不是融合身份，也不是群聊。"
+            "当前普通用户消息写入共享 entries 上下文；执行星默认静默，只能通过 link 工具按需联动。"
+            "执行星建议要体现在更稳的判断里，而不是抢答或刷存在感。"
         )
 
     @property
     def runtime_identity(self) -> str:
         lines = [
-            f"当前主角色：{self.main.name_zh} / {self.main.name_en}。",
-            f"当前辅导位：{self.liaison_label_or_empty}。",
+            f"当前主星：{self.main.name_zh} / {self.main.name_en}。",
+            f"当前执行星：{self.liaison_label_or_empty}。",
             f"当前联动名：{self.pair_label}。",
         ]
         if self.main.profile:
-            lines.append(f"主角色简介：{self.main.profile}")
+            lines.append(f"主星简介：{self.main.profile}")
         if self.liaison is not None and self.liaison.profile:
-            lines.append(f"辅导位简介：{self.liaison.profile}")
+            lines.append(f"执行星简介：{self.liaison.profile}")
         return "\n".join(line for line in lines if line)
 
 
@@ -1311,8 +1757,17 @@ def resolve_active_role(
                 )
             return cached_role, sequence_seed
 
+    configured_liaison_name = str(state.get("liaison_name_en") or "").strip()
+    selection_pool = [
+        role
+        for role in roster
+        if not configured_liaison_name
+        or _normalize_role_lookup(role.name_en) != _normalize_role_lookup(configured_liaison_name)
+    ]
+    if not selection_pool:
+        selection_pool = list(roster)
     rng = random.SystemRandom()
-    role = rng.choice(roster)
+    role = rng.choice(selection_pool)
     sequence_seed = rng.randrange(1, 2**31)
     return _activate_role(
         config,
@@ -1329,7 +1784,17 @@ def reroll_active_role(config: ProjectLingConfig | None = None) -> tuple[Launche
     roster = load_roster(config)
     state = _read_role_state(config)
     cached_name = str(state.get("name_en") or "").strip()
-    pool = [role for role in roster if role.name_en != cached_name]
+    liaison_name = str(state.get("liaison_name_en") or "").strip()
+    pool = [
+        role
+        for role in roster
+        if _normalize_role_lookup(role.name_en) not in {
+            _normalize_role_lookup(cached_name),
+            _normalize_role_lookup(liaison_name),
+        }
+    ]
+    if not pool:
+        pool = [role for role in roster if _normalize_role_lookup(role.name_en) != _normalize_role_lookup(cached_name)]
     if not pool:
         pool = list(roster)
 
@@ -1398,19 +1863,21 @@ def render_motd_card(
     settings_label: str = "输入 0 进入设置",
     max_lines: int | None = None,
     persona_bundle: PersonaBundle | None = None,
+    status_line: str = "",
 ) -> list[str]:
     del seed
     bundle = persona_bundle or PersonaBundle(main=role)
     main_role = bundle.main
     pad, inner_width = _card_layout(width)
     settings_label = settings_label.strip()
+    status_line = status_line.strip()
     title_line = _motd_meta_line("AI", "◈", "正在为您分配终端伙伴")
     rarity_line = _motd_meta_line(
         main_role.rarity or "SR",
         "⟡",
         rarity_badge(main_role.rarity).split("⟡", 1)[1].strip(),
     )
-    main_line = _motd_symbol_line("✧", f"主角色：{main_role.name_zh}  /  {main_role.name_en}")
+    main_line = _motd_symbol_line("✧", f"主星：{main_role.name_zh}  /  {main_role.name_en}")
     hold_line = _motd_symbol_line("●", f"{main_role.name_zh} {remaining_text or '剩余 24 小时 00 分钟'}")
     settings_line = _motd_symbol_line("●", settings_label) if settings_label else ""
 
@@ -1479,7 +1946,8 @@ def render_motd_card(
             )
         )
     else:
-        footer_count = 2 + (1 if settings_line else 0)
+        show_status = bool(status_line) and card_limit >= (10 if settings_line else 9)
+        footer_count = 2 + (1 if settings_line else 0) + (1 if show_status else 0)
         story_max_lines = max(1, card_limit - 5 - footer_count)
         lines = [
             _styled_line(title_line, style=f"{ANSI_BOLD}{ANSI_RIBBON}", pad=pad, width=inner_width),
@@ -1499,6 +1967,8 @@ def render_motd_card(
             )
         )
         lines.append(_blank_line(pad=pad, width=inner_width))
+        if show_status:
+            lines.append(_styled_line(status_line, style=f"{ANSI_DIM}{ANSI_RIBBON}", pad=pad, width=inner_width))
 
     lines.append(_styled_line(hold_line, style=f"{ANSI_BOLD}{ANSI_RIBBON}", pad=pad, width=inner_width))
     if settings_line:
@@ -1527,8 +1997,8 @@ def render_animation_frame(
         "⟡",
         rarity_badge(main_role.rarity).split("⟡", 1)[1].strip(),
     )
-    main_line = _motd_symbol_line("✧", f"主角色：{main_role.name_zh}  /  {main_role.name_en}")
-    lock_line = _motd_symbol_line("●", f"正在收束主角色状态  {frame_index + 1:02d}/{total_frames:02d}")
+    main_line = _motd_symbol_line("✧", f"主星：{main_role.name_zh}  /  {main_role.name_en}")
+    lock_line = _motd_symbol_line("●", f"正在收束主星状态  {frame_index + 1:02d}/{total_frames:02d}")
     lines = [
         _styled_line(title_line, style=f"{ANSI_BOLD}{ANSI_RIBBON}", pad=pad, width=inner_width),
         _styled_line(rarity_line, style=f"{ANSI_BOLD}{ANSI_WHITE}", pad=pad, width=inner_width),
@@ -1596,8 +2066,32 @@ def save_env_config(
         "DEEPSEEK_RETRY_COUNT",
         "DEEPSEEK_ENABLE_SSE",
     ]
-    provider_keys = [
-        "PROJECTLING_API_PROVIDER",
+    star_keys = [
+        "PROJECTLING_MAIN_PROVIDER",
+        "PROJECTLING_MAIN_API_KEY",
+        "PROJECTLING_MAIN_BASE_URL",
+        "PROJECTLING_MAIN_MODEL",
+        "PROJECTLING_MAIN_PARAMETER_PROFILE",
+        "PROJECTLING_MAIN_PARAMS_JSON",
+        "PROJECTLING_MAIN_TIMEOUT_SECONDS",
+        "PROJECTLING_MAIN_RETRY_COUNT",
+        "PROJECTLING_MAIN_ENABLE_SSE",
+        "PROJECTLING_EXECUTOR_PROVIDER",
+        "PROJECTLING_EXECUTOR_API_KEY",
+        "PROJECTLING_EXECUTOR_BASE_URL",
+        "PROJECTLING_EXECUTOR_MODEL",
+        "PROJECTLING_EXECUTOR_PARAMETER_PROFILE",
+        "PROJECTLING_EXECUTOR_PARAMS_JSON",
+        "PROJECTLING_EXECUTOR_TIMEOUT_SECONDS",
+        "PROJECTLING_EXECUTOR_RETRY_COUNT",
+        "PROJECTLING_EXECUTOR_ENABLE_SSE",
+    ]
+    provider_keys = ["PROJECTLING_API_PROVIDER"]
+    gpt_keys = [
+        "GPT_API_KEY",
+        "GPT_BASE_URL",
+        "GPT_PLANNER_MODEL",
+        "GPT_EXECUTOR_MODEL",
     ]
     gemini_keys = [
         "GEMINI_API_KEY",
@@ -1616,6 +2110,12 @@ def save_env_config(
         "GEMINI_RESPONSE_MIME_TYPE",
         "GEMINI_REASONING_EFFORT",
         "GEMINI_EXTRA_BODY_JSON",
+    ]
+    grok_keys = [
+        "GROK_API_KEY",
+        "GROK_BASE_URL",
+        "GROK_PLANNER_MODEL",
+        "GROK_EXECUTOR_MODEL",
     ]
     websearch_keys = [
         "VOLC_WEBSEARCH_SUMMARY_KEY",
@@ -1640,18 +2140,39 @@ def save_env_config(
         "PROJECTLING_DISABLE_TOOLS",
         "PROJECTLING_SAFE_COMMANDS",
     ]
-    ordered = [*provider_keys, *deepseek_keys, *gemini_keys, *websearch_keys, *projectling_keys]
+    ordered = [
+        *star_keys,
+        *provider_keys,
+        *gpt_keys,
+        *gemini_keys,
+        *grok_keys,
+        *deepseek_keys,
+        *websearch_keys,
+        *projectling_keys,
+    ]
 
-    lines = ["# Active API provider"]
+    lines = ["# Dual-star API configuration"]
+    for key in star_keys:
+        lines.append(f"{key}={existing.get(key, '')}")
+    lines.append("")
+    lines.append("# Legacy single-provider compatibility")
     for key in provider_keys:
+        lines.append(f"{key}={existing.get(key, '')}")
+    lines.append("")
+    lines.append("# GPT / Codex provider defaults")
+    for key in gpt_keys:
+        lines.append(f"{key}={existing.get(key, '')}")
+    lines.append("")
+    lines.append("# Gemini provider defaults (OpenAI-compatible)")
+    for key in gemini_keys:
+        lines.append(f"{key}={existing.get(key, '')}")
+    lines.append("")
+    lines.append("# Grok provider defaults")
+    for key in grok_keys:
         lines.append(f"{key}={existing.get(key, '')}")
     lines.append("")
     lines.append("# DeepSeek API")
     for key in deepseek_keys:
-        lines.append(f"{key}={existing.get(key, '')}")
-    lines.append("")
-    lines.append("# Gemini API (OpenAI-compatible)")
-    for key in gemini_keys:
         lines.append(f"{key}={existing.get(key, '')}")
     lines.append("")
     lines.append("# WebSearch API")
@@ -1750,6 +2271,10 @@ def load_config() -> ProjectLingConfig:
             PROJECTLING_API_PROVIDER_DEFAULT,
         )
     )
+    gpt_api_key = _first_non_empty(merged.get("GPT_API_KEY"))
+    gpt_base_url = _first_non_empty(merged.get("GPT_BASE_URL"), GPT_DEFAULT_BASE_URL) or GPT_DEFAULT_BASE_URL
+    gpt_planner_model = _first_non_empty(merged.get("GPT_PLANNER_MODEL"), GPT_PRECISE_MODEL) or GPT_PRECISE_MODEL
+    gpt_executor_model = _first_non_empty(merged.get("GPT_EXECUTOR_MODEL"), GPT_FAST_MODEL) or GPT_FAST_MODEL
     deepseek_api_key = _first_non_empty(merged.get("DEEPSEEK_API_KEY"))
     deepseek_base_url = _first_non_empty(merged.get("DEEPSEEK_BASE_URL"), "https://api.deepseek.com") or "https://api.deepseek.com"
     deepseek_planner_model = _first_non_empty(merged.get("DEEPSEEK_PLANNER_MODEL"), DEEPSEEK_PRECISE_MODEL) or DEEPSEEK_PRECISE_MODEL
@@ -1770,6 +2295,10 @@ def load_config() -> ProjectLingConfig:
         _first_non_empty(merged.get("GEMINI_REASONING_EFFORT"), GEMINI_REASONING_EFFORT_DEFAULT)
     )
     gemini_extra_body_json = str(_first_non_empty(merged.get("GEMINI_EXTRA_BODY_JSON"), "") or "").strip()
+    grok_api_key = _first_non_empty(merged.get("GROK_API_KEY"))
+    grok_base_url = _first_non_empty(merged.get("GROK_BASE_URL"), GROK_DEFAULT_BASE_URL) or GROK_DEFAULT_BASE_URL
+    grok_planner_model = _first_non_empty(merged.get("GROK_PLANNER_MODEL"), GROK_PRECISE_MODEL) or GROK_PRECISE_MODEL
+    grok_executor_model = _first_non_empty(merged.get("GROK_EXECUTOR_MODEL"), GROK_FAST_MODEL) or GROK_FAST_MODEL
 
     max_tokens_raw = _first_non_empty(
         merged.get("GEMINI_MAX_TOKENS") if api_provider == "gemini" else None,
@@ -1809,6 +2338,90 @@ def load_config() -> ProjectLingConfig:
         retry_count = min(10, max(0, int(retry_raw or "10")))
     except ValueError:
         retry_count = 10
+
+    default_enable_sse = _env_bool(merged.get("DEEPSEEK_ENABLE_SSE"), default=True)
+    deepseek_legacy_parameters: dict[str, Any] = {
+        "temperature": _optional_float_value(
+            merged.get("DEEPSEEK_TEMPERATURE"), min_value=0.0, max_value=2.0
+        ),
+        "reasoning_effort": _normalize_reasoning_effort(
+            _first_non_empty(merged.get("DEEPSEEK_REASONING_EFFORT"), DEEPSEEK_REASONING_EFFORT_DEFAULT)
+        ),
+        "max_tokens": _optional_int_value(merged.get("DEEPSEEK_MAX_TOKENS"), min_value=1),
+    }
+    gemini_legacy_parameters: dict[str, Any] = {
+        "temperature": _optional_float_value(
+            merged.get("GEMINI_TEMPERATURE"), min_value=0.0, max_value=2.0
+        ),
+        "top_p": gemini_top_p,
+        "top_k": gemini_top_k,
+        "candidate_count": gemini_candidate_count,
+        "seed": gemini_seed,
+        "presence_penalty": gemini_presence_penalty,
+        "frequency_penalty": gemini_frequency_penalty,
+        "stop": list(gemini_stop_sequences),
+        "response_mime_type": gemini_response_mime_type,
+        "reasoning_effort": gemini_reasoning_effort,
+        "max_tokens": _optional_int_value(merged.get("GEMINI_MAX_TOKENS"), min_value=1),
+        "extra_body": _json_object_value(gemini_extra_body_json),
+    }
+    deepseek_legacy_parameters = {
+        key: value
+        for key, value in deepseek_legacy_parameters.items()
+        if value is not None and value != "" and value != ()
+    }
+    gemini_legacy_parameters = {
+        key: value
+        for key, value in gemini_legacy_parameters.items()
+        if value is not None and value != "" and value != () and value != [] and value != {}
+    }
+    provider_credentials = {
+        "gpt": (gpt_api_key, gpt_base_url),
+        "gemini": (gemini_api_key, gemini_base_url),
+        "grok": (grok_api_key, grok_base_url),
+        "deepseek": (deepseek_api_key, deepseek_base_url),
+    }
+    provider_models = {
+        "gpt": (gpt_planner_model, gpt_executor_model),
+        "gemini": (gemini_planner_model, gemini_executor_model),
+        "grok": (grok_planner_model, grok_executor_model),
+        "deepseek": (deepseek_planner_model, deepseek_executor_model),
+    }
+    provider_legacy_parameters = {
+        "gpt": {},
+        "gemini": gemini_legacy_parameters,
+        "grok": {},
+        "deepseek": deepseek_legacy_parameters,
+    }
+    main_api = _star_api_config_from_merged(
+        merged,
+        slot="main",
+        legacy_provider=api_provider,
+        credentials=provider_credentials,
+        models=provider_models,
+        legacy_parameters=provider_legacy_parameters,
+        default_timeout_seconds=timeout_seconds,
+        default_retry_count=retry_count,
+        default_enable_sse=default_enable_sse,
+    )
+    executor_api = _star_api_config_from_merged(
+        merged,
+        slot="executor",
+        legacy_provider=api_provider,
+        credentials=provider_credentials,
+        models=provider_models,
+        legacy_parameters=provider_legacy_parameters,
+        default_timeout_seconds=timeout_seconds,
+        default_retry_count=retry_count,
+        default_enable_sse=default_enable_sse,
+    )
+    api_provider = main_api.provider
+    temperature = float(main_api.parameters.get("temperature", temperature))
+    reasoning_effort = str(main_api.parameters.get("reasoning_effort") or reasoning_effort)
+    raw_main_max_tokens = main_api.parameters.get("max_tokens")
+    max_tokens = int(raw_main_max_tokens) if isinstance(raw_main_max_tokens, int) else None
+    timeout_seconds = main_api.timeout_seconds
+    retry_count = main_api.retry_count
 
     role_ttl_raw = _first_non_empty(merged.get("PROJECTLING_ROLE_TTL_HOURS"), "24")
     try:
@@ -1897,10 +2510,16 @@ def load_config() -> ProjectLingConfig:
         persona_dir=persona_dir,
         dualstar_dir=dualstar_dir.resolve(),
         roster_path=roster_path,
-        api_key=gemini_api_key if api_provider == "gemini" else deepseek_api_key,
-        base_url=gemini_base_url if api_provider == "gemini" else deepseek_base_url,
-        model=gemini_executor_model if api_provider == "gemini" else deepseek_executor_model,
+        api_key=main_api.api_key,
+        base_url=main_api.base_url,
+        model=main_api.model,
         api_provider=api_provider,
+        main_api=main_api,
+        executor_api=executor_api,
+        gpt_api_key=gpt_api_key,
+        gpt_base_url=gpt_base_url,
+        gpt_planner_model=gpt_planner_model,
+        gpt_executor_model=gpt_executor_model,
         deepseek_api_key=deepseek_api_key,
         deepseek_base_url=deepseek_base_url,
         deepseek_planner_model=deepseek_planner_model,
@@ -1919,6 +2538,10 @@ def load_config() -> ProjectLingConfig:
         gemini_response_mime_type=gemini_response_mime_type,
         gemini_reasoning_effort=gemini_reasoning_effort,
         gemini_extra_body_json=gemini_extra_body_json,
+        grok_api_key=grok_api_key,
+        grok_base_url=grok_base_url,
+        grok_planner_model=grok_planner_model,
+        grok_executor_model=grok_executor_model,
         temperature=temperature,
         reasoning_effort=reasoning_effort,
         max_tokens=max_tokens,
@@ -1929,7 +2552,7 @@ def load_config() -> ProjectLingConfig:
         max_tool_rounds=max_tool_rounds,
         collab_mode=collab_mode,
         allow_tools=not _env_bool(merged.get("PROJECTLING_DISABLE_TOOLS"), default=False),
-        enable_sse=_env_bool(merged.get("DEEPSEEK_ENABLE_SSE"), default=True),
+        enable_sse=main_api.enable_sse,
         enable_thinking=True,
         websearch_summary_key=_first_non_empty(
             merged.get("VOLC_WEBSEARCH_SUMMARY_KEY"),
@@ -1984,6 +2607,10 @@ def load_prompt_bundle(config: ProjectLingConfig | None = None) -> PromptBundle:
         role_prompt = legacy_prompts[0]
     if not role_prompt:
         role_prompt = DEFAULT_ROLE_PROMPT
+    # Existing installations may carry an older context/prompts.json. Keep the
+    # user's prompt content, but normalize product terminology at read time so
+    # Settings/MOTD and the model never disagree about 主星/执行星.
+    role_prompt = role_prompt.replace("主角色", "主星").replace("辅导位", "执行星").replace("执行位", "执行星")
 
     typing_raw = raw.get("typing") or {}
     typing = {
@@ -2708,8 +3335,10 @@ def select_current_role_by_name(
     role = _find_role_by_name(load_roster(config), str(name or "").strip())
     if role is None:
         raise ProjectLingError(f"未找到角色：{name}")
+    previous_main = resolve_current_role(config)[0]
+    previous_liaison = configured_liaison_role(config)
     seed = random.SystemRandom().randrange(1, 2**31)
-    return _activate_role(
+    selected = _activate_role(
         config,
         role,
         now=int(time.time()),
@@ -2717,6 +3346,32 @@ def select_current_role_by_name(
         sequence_seed=seed,
         clear_context=False,
     )
+    if previous_liaison is not None and _normalize_role_lookup(previous_liaison.name_en) == _normalize_role_lookup(role.name_en):
+        payload = dict(_read_role_state(config))
+        if _normalize_role_lookup(previous_main.name_en) != _normalize_role_lookup(role.name_en):
+            now = int(time.time())
+            payload.update(
+                {
+                    "liaison_name_en": previous_main.name_en,
+                    "liaison_name_zh": previous_main.name_zh,
+                    "liaison_selected_at": now,
+                    "liaison_ttl_seconds": role_ttl_seconds(config),
+                    "liaison_expires_at": now + role_ttl_seconds(config),
+                    "liaison_sequence_seed": random.SystemRandom().randrange(1, 2**31),
+                }
+            )
+        else:
+            for key in (
+                "liaison_name_en",
+                "liaison_name_zh",
+                "liaison_selected_at",
+                "liaison_ttl_seconds",
+                "liaison_expires_at",
+                "liaison_sequence_seed",
+            ):
+                payload.pop(key, None)
+        _write_role_state(config, payload)
+    return selected
 
 
 def select_liaison_role_by_name(
@@ -2726,10 +3381,10 @@ def select_liaison_role_by_name(
     config = config or load_config()
     role = _find_role_by_name(load_roster(config), str(name or "").strip())
     if role is None:
-        raise ProjectLingError(f"未找到辅导位角色：{name}")
+        raise ProjectLingError(f"未找到执行星角色：{name}")
     main_role = resolve_current_role(config)[0]
     if _normalize_role_lookup(role.name_en) == _normalize_role_lookup(main_role.name_en):
-        raise ProjectLingError("辅导位不能和主角色相同。")
+        raise ProjectLingError("执行星不能和主星相同。")
     seed = random.SystemRandom().randrange(1, 2**31)
     now = int(time.time())
     payload = dict(_read_role_state(config))
@@ -2786,7 +3441,7 @@ def resolve_speaker_target_persona(
         base_seed = resolve_prompt_seed(config)
     base_bundle = resolve_persona_bundle(config, role=base_role, seed=base_seed)
     normalized = str(target or "").strip().lower()
-    if normalized in {"liaison", "辅导位", "advisor", "partner"} and base_bundle.liaison is not None:
+    if normalized in {"liaison", "执行星", "辅导位", "advisor", "partner"} and base_bundle.liaison is not None:
         state = _read_role_state(config)
         try:
             speaker_seed = int(state.get("speaker_sequence_seed") or state.get("liaison_sequence_seed") or base_seed)
@@ -2809,10 +3464,10 @@ def select_speaker_target(
     config = config or load_config()
     main_role, main_seed = resolve_current_role(config)
     normalized = str(target or "").strip().lower()
-    if normalized in {"main", "主角色", "主位", "default"}:
+    if normalized in {"main", "主星", "主角色", "主位", "default"}:
         clear_speaker_role(config)
         return resolve_speaker_target_persona(config, target="main", main_role=main_role, seed=main_seed)
-    if normalized not in {"liaison", "辅导位", "advisor", "partner"}:
+    if normalized not in {"liaison", "执行星", "辅导位", "advisor", "partner"}:
         raise ProjectLingError(f"未知说话者目标：{target}")
     speaker_role, _speaker_seed, speaker_bundle = resolve_speaker_target_persona(
         config,
@@ -2821,7 +3476,7 @@ def select_speaker_target(
         seed=main_seed,
     )
     if speaker_bundle.source != "speaker_handoff":
-        raise ProjectLingError("当前没有可切换的辅导位。")
+        raise ProjectLingError("当前没有可切换的执行星。")
     speaker_seed = random.SystemRandom().randrange(1, 2**31)
     payload = dict(_read_role_state(config))
     payload.update(
@@ -2907,38 +3562,120 @@ def choose_role_prompt(
 
 # --- DeepSeek Transport -----------------------------------------------------
 class DeepSeekClient:
-    def __init__(self, config: ProjectLingConfig) -> None:
+    def __init__(
+        self,
+        config: ProjectLingConfig,
+        star_config: StarAPIConfig | None = None,
+        *,
+        slot: str | None = None,
+    ) -> None:
         self.config = config
+        if star_config is not None:
+            self.star_config = star_config
+        elif slot and hasattr(config, f"{slot}_api"):
+            self.star_config = getattr(config, f"{slot}_api")
+        else:
+            self.star_config = self._legacy_star_config(config)
+
+    @staticmethod
+    def _legacy_star_config(config: ProjectLingConfig) -> StarAPIConfig:
+        provider = _api_provider_value(getattr(config, "api_provider", PROJECTLING_API_PROVIDER_DEFAULT))
+        provider_key = {
+            "gpt": getattr(config, "gpt_api_key", None),
+            "gemini": getattr(config, "gemini_api_key", None),
+            "grok": getattr(config, "grok_api_key", None),
+            "deepseek": getattr(config, "deepseek_api_key", None),
+        }.get(provider)
+        provider_base = {
+            "gpt": getattr(config, "gpt_base_url", GPT_DEFAULT_BASE_URL),
+            "gemini": getattr(config, "gemini_base_url", GEMINI_DEFAULT_BASE_URL),
+            "grok": getattr(config, "grok_base_url", GROK_DEFAULT_BASE_URL),
+            "deepseek": getattr(config, "deepseek_base_url", "https://api.deepseek.com"),
+        }.get(provider)
+        model = str(getattr(config, "model", "") or _provider_default_model(provider, "executor")).strip()
+        custom: dict[str, Any] = {
+            "temperature": getattr(config, "temperature", None),
+            "max_tokens": getattr(config, "max_tokens", None),
+            "reasoning_effort": getattr(config, "reasoning_effort", None),
+        }
+        if provider == "gemini":
+            custom.update(
+                {
+                    "top_p": getattr(config, "gemini_top_p", None),
+                    "top_k": getattr(config, "gemini_top_k", None),
+                    "candidate_count": getattr(config, "gemini_candidate_count", None),
+                    "seed": getattr(config, "gemini_seed", None),
+                    "presence_penalty": getattr(config, "gemini_presence_penalty", None),
+                    "frequency_penalty": getattr(config, "gemini_frequency_penalty", None),
+                    "stop": list(getattr(config, "gemini_stop_sequences", ()) or ()),
+                    "response_mime_type": getattr(config, "gemini_response_mime_type", ""),
+                    "reasoning_effort": getattr(config, "gemini_reasoning_effort", GEMINI_REASONING_EFFORT_DEFAULT),
+                    "extra_body": _json_object_value(getattr(config, "gemini_extra_body_json", "")),
+                }
+            )
+        custom = {
+            key: value
+            for key, value in custom.items()
+            if value is not None and value != "" and value != [] and value != {}
+        }
+        return StarAPIConfig(
+            slot="legacy",
+            provider=provider,
+            api_key=provider_key or getattr(config, "api_key", None),
+            base_url=str(provider_base or getattr(config, "base_url", "") or _provider_default_base_url(provider)).rstrip("/"),
+            model=model,
+            parameter_profile=STAR_PARAMETER_PROFILE_DEFAULT,
+            parameters=_normalize_star_parameters(
+                provider,
+                STAR_PARAMETER_PROFILE_DEFAULT,
+                model=model,
+                custom=custom,
+            ),
+            timeout_seconds=max(5.0, float(getattr(config, "timeout_seconds", 180.0) or 180.0)),
+            retry_count=min(10, max(0, int(getattr(config, "retry_count", 10) or 0))),
+            enable_sse=bool(getattr(config, "enable_sse", True)),
+            key_source="legacy",
+        )
 
     def _max_attempts(self) -> int:
-        return max(1, min(11, int(getattr(self.config, "retry_count", 10) or 0) + 1))
+        return max(1, min(11, int(self.star_config.retry_count or 0) + 1))
 
-    def _retry_delay(self, attempt_index: int) -> float:
-        return min(2.0, 0.25 * max(1, attempt_index))
+    def _retry_delay(self, attempt_index: int, *, retry_after: float | None = None) -> float:
+        base = min(2.0, 0.25 * max(1, attempt_index))
+        if retry_after is None:
+            return base
+        try:
+            return max(base, min(30.0, max(0.0, float(retry_after))))
+        except (TypeError, ValueError):
+            return base
 
     def provider(self) -> str:
-        return _api_provider_value(getattr(self.config, "api_provider", PROJECTLING_API_PROVIDER_DEFAULT))
+        return _api_provider_value(self.star_config.provider)
 
     def provider_label(self) -> str:
-        return "Gemini" if self.provider() == "gemini" else "DeepSeek"
+        return _provider_label_value(self.provider())
 
     def _api_key(self) -> str | None:
-        if self.provider() == "gemini":
-            return getattr(self.config, "gemini_api_key", None) or self.config.api_key
-        return getattr(self.config, "deepseek_api_key", None) or self.config.api_key
+        return self.star_config.api_key
 
     def _base_url(self) -> str:
-        if self.provider() == "gemini":
-            return (getattr(self.config, "gemini_base_url", "") or self.config.base_url or GEMINI_DEFAULT_BASE_URL).rstrip("/")
-        return (getattr(self.config, "deepseek_base_url", "") or self.config.base_url or "https://api.deepseek.com").rstrip("/")
+        return (self.star_config.base_url or _provider_default_base_url(self.provider())).rstrip("/")
 
     def _api_key_missing_message(self) -> str:
-        if self.provider() == "gemini":
-            return "GEMINI_API_KEY 未配置。"
-        return "DEEPSEEK_API_KEY 未配置。"
+        return f"{self.provider_label()} API Key 未配置（{self.star_config.slot}）。"
+
+    def _safe_error_text(self, value: Any, *, limit: int = 2400) -> str:
+        text = str(value or "")
+        key = str(self._api_key() or "")
+        if key:
+            text = text.replace(key, "[REDACTED]")
+        text = _TRANSPORT_SECRET_RE.sub("[REDACTED]", text)
+        return text[: max(0, int(limit))]
 
     @staticmethod
     def _is_retryable_error(exc: BaseException) -> bool:
+        if isinstance(exc, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+            return True
         if isinstance(exc, socket.timeout):
             return True
         if isinstance(exc, TimeoutError):
@@ -2952,6 +3689,8 @@ class DeepSeekClient:
             )
         if isinstance(exc, error.URLError):
             reason = getattr(exc, "reason", None)
+            if isinstance(reason, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+                return True
             if isinstance(reason, (TimeoutError, socket.timeout)):
                 return True
             if isinstance(reason, ssl.SSLError):
@@ -2961,8 +3700,39 @@ class DeepSeekClient:
                 "timed out" in reason_text
                 or "unexpected_eof" in reason_text
                 or "eof occurred in violation of protocol" in reason_text
+                or "connection reset" in reason_text
+                or "remote end closed" in reason_text
+                or "temporarily unavailable" in reason_text
             )
-        return "timed out" in text
+        return any(
+            marker in text
+            for marker in (
+                "timed out",
+                "connection reset",
+                "remote end closed",
+                "temporarily unavailable",
+            )
+        )
+
+    @staticmethod
+    def _is_retryable_http_status(status_code: int) -> bool:
+        return int(status_code or 0) in {408, 409, 425, 429, 500, 502, 503, 504}
+
+    @staticmethod
+    def _http_retry_after(response: Any) -> float | None:
+        headers = getattr(response, "headers", None)
+        if headers is None:
+            return None
+        try:
+            raw = headers.get("Retry-After")
+        except Exception:
+            return None
+        if raw in {None, ""}:
+            return None
+        try:
+            return max(0.0, float(str(raw).strip()))
+        except (TypeError, ValueError):
+            return None
 
     def _thinking_enabled_for_request(
         self,
@@ -2970,7 +3740,7 @@ class DeepSeekClient:
         configured_model: str,
     ) -> bool:
         model = str(configured_model or "").strip().lower()
-        if self.provider() == "gemini":
+        if self.provider() in {"gpt", "gemini", "grok"}:
             return bool(model)
         if "reasoner" in model:
             return True
@@ -3012,33 +3782,28 @@ class DeepSeekClient:
         self._deep_merge_dict(existing, extra_body)
 
     def _gemini_extra_body(self) -> dict[str, Any]:
+        parameters = self.star_config.parameters
         google: dict[str, Any] = {}
         generation_config: dict[str, Any] = {}
-        if getattr(self.config, "gemini_top_k", None) is not None:
-            generation_config["topK"] = int(getattr(self.config, "gemini_top_k"))
-        if getattr(self.config, "gemini_candidate_count", None) is not None:
-            generation_config["candidateCount"] = int(getattr(self.config, "gemini_candidate_count"))
-        if getattr(self.config, "gemini_seed", None) is not None:
-            generation_config["seed"] = int(getattr(self.config, "gemini_seed"))
-        if getattr(self.config, "gemini_response_mime_type", ""):
-            generation_config["responseMimeType"] = str(getattr(self.config, "gemini_response_mime_type"))
+        if parameters.get("top_k") is not None:
+            generation_config["topK"] = int(parameters["top_k"])
+        if parameters.get("candidate_count") is not None:
+            generation_config["candidateCount"] = int(parameters["candidate_count"])
+        if parameters.get("seed") is not None:
+            generation_config["seed"] = int(parameters["seed"])
+        if parameters.get("response_mime_type"):
+            generation_config["responseMimeType"] = str(parameters["response_mime_type"])
         if generation_config:
             google["generation_config"] = generation_config
         extra_body: dict[str, Any] = {"google": google} if google else {}
-        raw_extra = str(getattr(self.config, "gemini_extra_body_json", "") or "").strip()
-        if raw_extra:
-            try:
-                parsed = json.loads(raw_extra)
-                if isinstance(parsed, dict):
-                    if isinstance(parsed.get("google"), dict):
-                        google_existing = extra_body.setdefault("google", {})
-                        if isinstance(google_existing, dict):
-                            self._deep_merge_dict(google_existing, parsed["google"])
-                    for key, value in parsed.items():
-                        if key != "google":
-                            extra_body[key] = value
-            except json.JSONDecodeError:
-                pass
+        parsed = parameters.get("extra_body") if isinstance(parameters.get("extra_body"), dict) else {}
+        if isinstance(parsed.get("google"), dict):
+            google_existing = extra_body.setdefault("google", {})
+            if isinstance(google_existing, dict):
+                self._deep_merge_dict(google_existing, parsed["google"])
+        for key, value in parsed.items():
+            if key != "google":
+                extra_body[key] = value
         return extra_body
 
     @staticmethod
@@ -3088,23 +3853,29 @@ class DeepSeekClient:
         return sanitized
 
     def _request_timeout(self, *, stream: bool) -> float:
-        base_timeout = max(5.0, float(self.config.timeout_seconds))
+        base_timeout = max(5.0, float(self.star_config.timeout_seconds))
         if not stream:
             return base_timeout
         return max(base_timeout, 300.0)
 
     def _configured_model_pair(self) -> tuple[str, str, str, str]:
-        provider = self.provider()
-        if provider == "gemini":
-            configured_planner = str(getattr(self.config, "gemini_planner_model", GEMINI_PRECISE_MODEL) or GEMINI_PRECISE_MODEL)
-            configured_executor = str(getattr(self.config, "gemini_executor_model", GEMINI_FAST_MODEL) or GEMINI_FAST_MODEL)
-        else:
-            configured_planner = str(getattr(self.config, "deepseek_planner_model", DEEPSEEK_PRECISE_MODEL) or DEEPSEEK_PRECISE_MODEL)
-            configured_executor = str(getattr(self.config, "deepseek_executor_model", DEEPSEEK_FAST_MODEL) or DEEPSEEK_FAST_MODEL)
-        mode = _collab_mode_value(getattr(self.config, "collab_mode", PROJECTLING_COLLAB_MODE_DEFAULT))
-        planner = configured_executor if mode == "rapid" else configured_planner
-        executor = configured_planner if mode == "precise" else configured_executor
-        return configured_planner, configured_executor, planner, executor
+        main_api = getattr(self.config, "main_api", None)
+        executor_api = getattr(self.config, "executor_api", None)
+        configured_planner = str(getattr(main_api, "model", "") or self.star_config.model)
+        configured_executor = str(getattr(executor_api, "model", "") or self.star_config.model)
+        return configured_planner, configured_executor, configured_planner, configured_executor
+
+    def _audit_base_host(self) -> str:
+        try:
+            parsed = parse.urlsplit(self._base_url())
+            host = str(parsed.hostname or "").strip()
+            port = parsed.port
+        except ValueError:
+            return "invalid-base-url"
+        if not host:
+            return "unknown"
+        display_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+        return f"{display_host}:{port}" if port is not None else display_host
 
     @staticmethod
     def _audit_tool_names(payload: dict[str, Any]) -> list[str]:
@@ -3195,12 +3966,18 @@ class DeepSeekClient:
         record: dict[str, Any] = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "audit_id": f"{int(time.time() * 1000)}-{os.getpid()}-{threading.get_ident()}",
+            "slot": self.star_config.slot,
             "provider": self.provider(),
-            "base_host": parse.urlsplit(self._base_url()).netloc,
+            "provider_label": self.provider_label(),
+            "parameter_profile": self.star_config.parameter_profile,
+            "key_source": self.star_config.key_source,
+            "base_host": self._audit_base_host(),
             "endpoint": "/chat/completions",
             "collab_mode": _collab_mode_value(getattr(self.config, "collab_mode", PROJECTLING_COLLAB_MODE_DEFAULT)),
             "configured_planner_model": configured_planner,
             "configured_executor_model": configured_executor,
+            "configured_main_provider": getattr(getattr(self.config, "main_api", None), "provider", self.provider()),
+            "configured_executor_provider": getattr(getattr(self.config, "executor_api", None), "provider", self.provider()),
             "planner_model": planner_model,
             "executor_model": executor_model,
             "request_model": str(payload.get("model") or "").strip()[:160],
@@ -3209,6 +3986,7 @@ class DeepSeekClient:
             "thinking_enabled": self._payload_thinking_enabled(payload),
             "max_tokens": payload.get("max_tokens") if isinstance(payload.get("max_tokens"), int) else None,
             "temperature": payload.get("temperature") if isinstance(payload.get("temperature"), (int, float)) else None,
+            "reasoning_effort": str(payload.get("reasoning_effort") or "")[:40],
             "tool_count": len(self._audit_tool_names(payload)),
             "tool_names": self._audit_tool_names(payload),
             "message_count": len(payload.get("messages") or []) if isinstance(payload.get("messages"), list) else 0,
@@ -3250,7 +4028,8 @@ class DeepSeekClient:
         thinking_enabled: bool | None = None,
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
-        configured_model = (model or "").strip() or self.config.model.strip() or DEEPSEEK_FAST_MODEL
+        configured_model = (model or "").strip() or self.star_config.model.strip() or _provider_default_model(self.provider(), self.star_config.slot)
+        parameters = self.star_config.parameters
         effective_thinking = (
             self._thinking_enabled_for_request(configured_model=configured_model)
             if thinking_enabled is None
@@ -3261,33 +4040,27 @@ class DeepSeekClient:
             "messages": messages,
             "stream": stream,
         }
-        if not effective_thinking:
-            payload["temperature"] = self.config.temperature if temperature is None else temperature
         if max_tokens is not None:
             payload["max_tokens"] = max(1, int(max_tokens))
-        elif self.config.max_tokens is not None:
-            payload["max_tokens"] = self.config.max_tokens
+        elif isinstance(parameters.get("max_tokens"), int):
+            payload["max_tokens"] = max(1, int(parameters["max_tokens"]))
         elif stream:
             payload["max_tokens"] = 1024
         if tools:
             payload["tools"] = self._sanitize_gemini_tools(tools) if self.provider() == "gemini" else tools
             payload["tool_choice"] = tool_choice
+
+        effective_temperature = temperature if temperature is not None else parameters.get("temperature")
         if self.provider() == "gemini":
-            if temperature is not None:
-                payload["temperature"] = temperature
-            elif self.config.temperature is not None:
-                payload["temperature"] = self.config.temperature
-            if getattr(self.config, "gemini_top_p", None) is not None:
-                payload["top_p"] = float(getattr(self.config, "gemini_top_p"))
-            if getattr(self.config, "gemini_presence_penalty", None) is not None:
-                payload["presence_penalty"] = float(getattr(self.config, "gemini_presence_penalty"))
-            if getattr(self.config, "gemini_frequency_penalty", None) is not None:
-                payload["frequency_penalty"] = float(getattr(self.config, "gemini_frequency_penalty"))
-            stop_sequences = tuple(getattr(self.config, "gemini_stop_sequences", ()) or ())
-            if stop_sequences:
-                payload["stop"] = list(stop_sequences)
+            if isinstance(effective_temperature, (int, float)):
+                payload["temperature"] = float(effective_temperature)
+            for key in ("top_p", "presence_penalty", "frequency_penalty"):
+                if isinstance(parameters.get(key), (int, float)):
+                    payload[key] = float(parameters[key])
+            if parameters.get("stop"):
+                payload["stop"] = list(parameters["stop"])
             if self._supports_gemini_reasoning_effort(configured_model):
-                effort = _normalize_gemini_reasoning_effort(getattr(self.config, "gemini_reasoning_effort", GEMINI_REASONING_EFFORT_DEFAULT))
+                effort = _normalize_gemini_reasoning_effort(str(parameters.get("reasoning_effort") or ""))
                 payload["reasoning_effort"] = effort if effective_thinking else "none"
             gemini_extra_body = self._gemini_extra_body()
             if (
@@ -3302,10 +4075,52 @@ class DeepSeekClient:
             extra_body = payload.get("extra_body") if isinstance(payload.get("extra_body"), dict) else {}
             if self._has_gemini_thinking_config(extra_body):
                 payload.pop("reasoning_effort", None)
+        elif self.provider() == "gpt":
+            effort = _normalize_gpt_reasoning_effort(
+                str(parameters.get("reasoning_effort") or ""),
+                model=configured_model,
+            )
+            payload["reasoning_effort"] = effort if effective_thinking else "low"
+            verbosity = str(parameters.get("verbosity") or "medium").strip().lower()
+            if verbosity in {"low", "medium", "high"}:
+                payload["verbosity"] = verbosity
+            extra_body = parameters.get("extra_body")
+            if isinstance(extra_body, dict):
+                self._merge_extra_body(payload, extra_body)
+        elif self.provider() == "grok":
+            if isinstance(effective_temperature, (int, float)):
+                payload["temperature"] = float(effective_temperature)
+            for key in ("top_p", "presence_penalty", "frequency_penalty", "seed"):
+                if isinstance(parameters.get(key), (int, float)):
+                    payload[key] = parameters[key]
+            if parameters.get("stop"):
+                payload["stop"] = list(parameters["stop"])
+            if effective_thinking:
+                payload["reasoning_effort"] = _normalize_grok_reasoning_effort(
+                    str(parameters.get("reasoning_effort") or "")
+                )
+            extra_body = parameters.get("extra_body")
+            if isinstance(extra_body, dict):
+                self._merge_extra_body(payload, extra_body)
         elif self._supports_thinking_control(configured_model):
             payload["thinking"] = {"type": "enabled" if effective_thinking else "disabled"}
             if effective_thinking:
-                payload["reasoning_effort"] = _normalize_reasoning_effort(self.config.reasoning_effort)
+                payload["reasoning_effort"] = _normalize_reasoning_effort(
+                    str(parameters.get("reasoning_effort") or "")
+                )
+            elif isinstance(effective_temperature, (int, float)):
+                payload["temperature"] = float(effective_temperature)
+            extra_body = parameters.get("extra_body")
+            if isinstance(extra_body, dict):
+                self._merge_extra_body(payload, extra_body)
+        else:
+            if isinstance(effective_temperature, (int, float)):
+                payload["temperature"] = float(effective_temperature)
+            for key in ("top_p", "presence_penalty", "frequency_penalty"):
+                if isinstance(parameters.get(key), (int, float)):
+                    payload[key] = float(parameters[key])
+            if parameters.get("stop"):
+                payload["stop"] = list(parameters["stop"])
         if stream:
             payload["stream_options"] = {"include_usage": True}
         return payload
@@ -3342,16 +4157,16 @@ class DeepSeekClient:
             with request.urlopen(self._build_get_request("/models"), timeout=self._request_timeout(stream=False)) as response:
                 body = response.read().decode("utf-8")
         except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
+            detail = self._safe_error_text(exc.read().decode("utf-8", errors="replace"))
             raise DeepSeekAPIError(f"HTTP {exc.code}: {detail}") from exc
-        except (error.URLError, socket.timeout, TimeoutError, ssl.SSLError) as exc:
-            raise DeepSeekAPIError(f"模型列表请求失败: {exc}") from exc
+        except (error.URLError, socket.timeout, TimeoutError, ssl.SSLError, ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as exc:
+            raise DeepSeekAPIError(f"模型列表请求失败: {self._safe_error_text(exc)}") from exc
         try:
             data = json.loads(body)
         except json.JSONDecodeError as exc:
-            raise DeepSeekAPIError(f"模型列表响应不是合法 JSON: {body[:240]}") from exc
+            raise DeepSeekAPIError(f"模型列表响应不是合法 JSON: {self._safe_error_text(body, limit=240)}") from exc
         if "error" in data:
-            raise DeepSeekAPIError(str(data["error"]))
+            raise DeepSeekAPIError(self._safe_error_text(data["error"]))
         return data
 
     def retrieve_model(self, model_id: str) -> dict[str, Any]:
@@ -3366,16 +4181,16 @@ class DeepSeekClient:
             with request.urlopen(self._build_get_request(f"/models/{safe_model}"), timeout=self._request_timeout(stream=False)) as response:
                 body = response.read().decode("utf-8")
         except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
+            detail = self._safe_error_text(exc.read().decode("utf-8", errors="replace"))
             raise DeepSeekAPIError(f"HTTP {exc.code}: {detail}") from exc
-        except (error.URLError, socket.timeout, TimeoutError, ssl.SSLError) as exc:
-            raise DeepSeekAPIError(f"模型详情请求失败: {exc}") from exc
+        except (error.URLError, socket.timeout, TimeoutError, ssl.SSLError, ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as exc:
+            raise DeepSeekAPIError(f"模型详情请求失败: {self._safe_error_text(exc)}") from exc
         try:
             data = json.loads(body)
         except json.JSONDecodeError as exc:
-            raise DeepSeekAPIError(f"模型详情响应不是合法 JSON: {body[:240]}") from exc
+            raise DeepSeekAPIError(f"模型详情响应不是合法 JSON: {self._safe_error_text(body, limit=240)}") from exc
         if "error" in data:
-            raise DeepSeekAPIError(str(data["error"]))
+            raise DeepSeekAPIError(self._safe_error_text(data["error"]))
         return data
 
     def chat_completions(
@@ -3418,24 +4233,28 @@ class DeepSeekClient:
                     break
                 except error.HTTPError as exc:
                     response_meta = exc
-                    detail = exc.read().decode("utf-8", errors="replace")
+                    detail = self._safe_error_text(exc.read().decode("utf-8", errors="replace"))
+                    if self._is_retryable_http_status(exc.code) and attempt < self._max_attempts():
+                        errors.append(f"HTTP {exc.code}: {detail[:300]}")
+                        time.sleep(self._retry_delay(attempt, retry_after=self._http_retry_after(exc)))
+                        continue
                     raise DeepSeekAPIError(f"HTTP {exc.code}: {detail}") from exc
-                except (error.URLError, socket.timeout, TimeoutError, ssl.SSLError) as exc:
+                except (error.URLError, socket.timeout, TimeoutError, ssl.SSLError, ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as exc:
                     if not self._is_retryable_error(exc) or attempt >= self._max_attempts():
                         if errors:
-                            joined = "；".join(errors[-3:])
-                            raise DeepSeekAPIError(f"网络请求失败，已重试 {attempt - 1} 次: {exc}；最近错误：{joined}") from exc
-                        raise DeepSeekAPIError(f"网络请求失败: {exc}") from exc
-                    errors.append(str(exc))
+                            joined = self._safe_error_text("；".join(errors[-3:]))
+                            raise DeepSeekAPIError(f"网络请求失败，已重试 {attempt - 1} 次: {self._safe_error_text(exc)}；最近错误：{joined}") from exc
+                        raise DeepSeekAPIError(f"网络请求失败: {self._safe_error_text(exc)}") from exc
+                    errors.append(self._safe_error_text(exc))
                     time.sleep(self._retry_delay(attempt))
 
             try:
                 data = json.loads(body)
             except json.JSONDecodeError as exc:
-                raise DeepSeekAPIError(f"响应不是合法 JSON: {body[:240]}") from exc
+                raise DeepSeekAPIError(f"响应不是合法 JSON: {self._safe_error_text(body, limit=240)}") from exc
 
             if "error" in data:
-                raise DeepSeekAPIError(str(data["error"]))
+                raise DeepSeekAPIError(self._safe_error_text(data["error"]))
             self._write_model_request_audit(
                 payload,
                 started_at=started_at,
@@ -3542,9 +4361,9 @@ class DeepSeekClient:
                             try:
                                 chunk = json.loads(raw_payload)
                             except json.JSONDecodeError as exc:
-                                raise DeepSeekAPIError(f"SSE 响应不是合法 JSON: {raw_payload[:240]}") from exc
+                                raise DeepSeekAPIError(f"SSE 响应不是合法 JSON: {self._safe_error_text(raw_payload, limit=240)}") from exc
                             if "error" in chunk:
-                                raise DeepSeekAPIError(str(chunk["error"]))
+                                raise DeepSeekAPIError(self._safe_error_text(chunk["error"]))
                             for key in ("id", "model", "usage"):
                                 if key in chunk:
                                     audit_response[key] = chunk[key]
@@ -3566,15 +4385,19 @@ class DeepSeekClient:
                     return
                 except error.HTTPError as exc:
                     response_meta = exc
-                    detail = exc.read().decode("utf-8", errors="replace")
+                    detail = self._safe_error_text(exc.read().decode("utf-8", errors="replace"))
+                    if self._is_retryable_http_status(exc.code) and not yielded_any and attempt < self._max_attempts():
+                        errors.append(f"HTTP {exc.code}: {detail[:300]}")
+                        time.sleep(self._retry_delay(attempt, retry_after=self._http_retry_after(exc)))
+                        continue
                     raise DeepSeekAPIError(f"HTTP {exc.code}: {detail}") from exc
-                except (error.URLError, socket.timeout, TimeoutError, ssl.SSLError) as exc:
+                except (error.URLError, socket.timeout, TimeoutError, ssl.SSLError, ConnectionResetError, ConnectionAbortedError, BrokenPipeError) as exc:
                     if yielded_any or not self._is_retryable_error(exc) or attempt >= self._max_attempts():
                         if errors:
-                            joined = "；".join(errors[-3:])
-                            raise DeepSeekAPIError(f"网络请求失败，已重试 {attempt - 1} 次: {exc}；最近错误：{joined}") from exc
-                        raise DeepSeekAPIError(f"网络请求失败: {exc}") from exc
-                    errors.append(str(exc))
+                            joined = self._safe_error_text("；".join(errors[-3:]))
+                            raise DeepSeekAPIError(f"网络请求失败，已重试 {attempt - 1} 次: {self._safe_error_text(exc)}；最近错误：{joined}") from exc
+                        raise DeepSeekAPIError(f"网络请求失败: {self._safe_error_text(exc)}") from exc
+                    errors.append(self._safe_error_text(exc))
                     time.sleep(self._retry_delay(attempt))
         except GeneratorExit as exc:
             if not audit_written:
@@ -3610,11 +4433,20 @@ class ProjectLingEngine:
         *,
         prompt_bundle: PromptBundle | None = None,
         client: DeepSeekClient | None = None,
+        main_client: DeepSeekClient | None = None,
+        executor_client: DeepSeekClient | None = None,
         registry: ToolRegistry | None = None,
     ) -> None:
         self.config = config or load_config()
         self.prompt_bundle = prompt_bundle or load_prompt_bundle(self.config)
-        self.client = client or DeepSeekClient(self.config)
+        if client is not None:
+            self.main_client = client
+            self.executor_client = client
+        else:
+            self.main_client = main_client or DeepSeekClient(self.config, self.config.main_api)
+            self.executor_client = executor_client or DeepSeekClient(self.config, self.config.executor_api)
+        # Compatibility alias for callers that still inspect/inject a single client.
+        self.client = self.main_client
         self.registry = registry or ToolRegistry(self.config, error_cls=ToolExecutionError)
         self.registry.register(self._link_tool_definition())
         self.registry.register(self._model_mode_tool_definition())
@@ -3628,8 +4460,7 @@ class ProjectLingEngine:
         return resolve_persona_bundle(self.config, role=role, seed=seed)
 
     def current_chat_persona(self) -> tuple[LauncherRole, int, PersonaBundle]:
-        role, seed = resolve_current_role(self.config)
-        return role, seed, resolve_persona_bundle(self.config, role=role, seed=seed)
+        return resolve_current_speaker(self.config)
 
     def persona_for_dispatch_mode(self, mode: str) -> tuple[LauncherRole, int, PersonaBundle]:
         del mode
@@ -3767,9 +4598,9 @@ class ProjectLingEngine:
         return ToolDefinition(
             name="model_mode",
             description=(
-                "Inspect or change ProjectLing collaboration mode. rapid uses V4 flash without thinking, "
-                "standard uses a thinking planner plus non-thinking executor, and precise uses V4 pro with "
-                "thinking on both sides. Changes are persisted for following turns."
+                "Inspect or change ProjectLing collaboration mode. The configured main/executor providers and "
+                "models stay fixed: rapid lowers reasoning overhead, standard follows each star parameter preset, "
+                "and precise enables reasoning on both sides. Changes are persisted for following turns."
             ),
             input_schema={
                 "type": "object",
@@ -3818,7 +4649,16 @@ class ProjectLingEngine:
         raw_mode = str(args.get("mode") or "").strip()
         if not raw_mode:
             return {"status": "error", "tool": "model_mode", "action": "set", "message": "缺少 mode。"}
-        mode = _collab_mode_value(raw_mode)
+        mode = _collab_mode_strict_value(raw_mode)
+        if mode is None:
+            return {
+                "status": "error",
+                "tool": "model_mode",
+                "action": "set",
+                "mode": raw_mode,
+                "previous_mode": current_mode,
+                "message": "mode 必须是 rapid、standard 或 precise；设置未修改。",
+            }
         save_env_config({"PROJECTLING_COLLAB_MODE": mode}, path=context.config.env_file_path)
         return {
             "status": "ok",
@@ -3835,30 +4675,31 @@ class ProjectLingEngine:
         }
 
     def _planner_model_for_mode(self, mode: str) -> str:
-        resolved = _collab_mode_value(mode)
-        if _api_provider_value(getattr(self.config, "api_provider", "")) == "gemini":
-            if resolved == "rapid":
-                return getattr(self.config, "gemini_executor_model", GEMINI_FAST_MODEL) or GEMINI_FAST_MODEL
-            return getattr(self.config, "gemini_planner_model", GEMINI_PRECISE_MODEL) or GEMINI_PRECISE_MODEL
-        planner_model = getattr(self.config, "deepseek_planner_model", DEEPSEEK_PRECISE_MODEL) or DEEPSEEK_PRECISE_MODEL
-        executor_model = getattr(self.config, "deepseek_executor_model", DEEPSEEK_FAST_MODEL) or DEEPSEEK_FAST_MODEL
-        return executor_model if resolved == "rapid" else planner_model
+        del mode
+        return self.config.main_api.model or _provider_default_model(self.config.main_api.provider, "main")
 
     def _executor_model_for_mode(self, mode: str) -> str:
-        resolved = _collab_mode_value(mode)
-        if _api_provider_value(getattr(self.config, "api_provider", "")) == "gemini":
-            if resolved == "precise":
-                return getattr(self.config, "gemini_planner_model", GEMINI_PRECISE_MODEL) or GEMINI_PRECISE_MODEL
-            return getattr(self.config, "gemini_executor_model", GEMINI_FAST_MODEL) or GEMINI_FAST_MODEL
-        planner_model = getattr(self.config, "deepseek_planner_model", DEEPSEEK_PRECISE_MODEL) or DEEPSEEK_PRECISE_MODEL
-        executor_model = getattr(self.config, "deepseek_executor_model", DEEPSEEK_FAST_MODEL) or DEEPSEEK_FAST_MODEL
-        return planner_model if resolved == "precise" else executor_model
+        del mode
+        return self.config.executor_api.model or _provider_default_model(self.config.executor_api.provider, "executor")
+
+    @staticmethod
+    def _star_thinking_configured(star: StarAPIConfig) -> bool:
+        effort = str(star.parameters.get("reasoning_effort") or "").strip().lower()
+        return effort not in {"", "none", "off", "disabled"}
 
     def _planner_thinking_for_mode(self, mode: str) -> bool:
-        return _collab_mode_value(mode) in {"standard", "precise"}
+        resolved = _collab_mode_value(mode)
+        if resolved == "rapid":
+            return False
+        return self._star_thinking_configured(self.config.main_api)
 
     def _executor_thinking_for_mode(self, mode: str) -> bool:
-        return _collab_mode_value(mode) == "precise"
+        resolved = _collab_mode_value(mode)
+        if resolved == "rapid":
+            return False
+        if resolved == "precise":
+            return True
+        return self._star_thinking_configured(self.config.executor_api)
 
     def _execute_link_tool(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         action = str(args.get("action") or "").strip().lower()
@@ -3931,7 +4772,7 @@ class ProjectLingEngine:
         base_bundle = resolve_persona_bundle(self.config, role=main_role, seed=main_seed)
         note = str(args.get("message") or "").strip()
         if not note:
-            label = "辅导位" if target == "liaison" else "主角色"
+            label = "执行星" if target == "liaison" else "主星"
             note = f"已切换到{label}：{speaker_role.name_zh}。"
         return {
             "status": "ok",
@@ -3968,27 +4809,27 @@ class ProjectLingEngine:
         if action == "liaison":
             return _prompt_block(
                 f"""
-                当前主角色 {main_role.name_zh} / {main_role.name_en} 请求辅导位 {liaison_role.name_zh} / {liaison_role.name_en} 协助。
+                当前主星 {main_role.name_zh} / {main_role.name_en} 请求执行星 {liaison_role.name_zh} / {liaison_role.name_en} 协助。
                 问题是：
                 {message}
 
-                请深度思考后给出最优解。你的目标是帮助主角色判断，而不是为了完成任务而执行任务。
+                请深度思考后给出最优解。你的目标是帮助主星判断，而不是为了完成任务而执行任务。
                 不要调用工具，不要模拟执行，不要直接对用户表演；先给结论，再给风险和可采用建议。
                 """
             )
         if action == "contact":
             return _prompt_block(
                 f"""
-                主角色 {main_role.name_zh} / {main_role.name_en} 主动联系你。
+                主星 {main_role.name_zh} / {main_role.name_en} 主动联系你。
                 对话内容：
                 {message}
 
-                请以辅导位身份直接回应主角色，保持自然、简洁、可继续对话。
+                请以执行星身份直接回应主星，保持自然、简洁、可继续对话。
                 """
             )
         if objective:
-            return f"主角色 {main_role.name_zh} / {main_role.name_en} 发来消息：{message}\n目标：{objective}"
-        return f"主角色 {main_role.name_zh} / {main_role.name_en} 发来消息：{message}"
+            return f"主星 {main_role.name_zh} / {main_role.name_en} 发来消息：{message}\n目标：{objective}"
+        return f"主星 {main_role.name_zh} / {main_role.name_en} 发来消息：{message}"
 
     def _persona_mission_log_path(self) -> Path:
         return self.config.runtime_dir / "persona-missions.jsonl"
@@ -4018,7 +4859,7 @@ class ProjectLingEngine:
             "task": task,
             "objective": objective,
             "cwd": str(context.cwd),
-            "brief": str(args.get("brief") or "委派辅导位任务").strip(),
+            "brief": str(args.get("brief") or "委派执行星任务").strip(),
         }
         transcript = [
             {
@@ -4064,7 +4905,7 @@ class ProjectLingEngine:
             "task": task,
             "objective": objective,
             "mission_path": str(path),
-            "brief": str(args.get("brief") or "委派辅导位任务").strip(),
+            "brief": str(args.get("brief") or "委派执行星任务").strip(),
             "message": "mission 已记录到队列；当前版本没有常驻后台执行器，未伪造自动完成。",
         }
 
@@ -4091,7 +4932,7 @@ class ProjectLingEngine:
             default_liaison=default_liaison,
         )
         if liaison_role is None:
-            return {"status": "error", "tool": "persona_link", "action": action, "message": error_message or "无法解析辅导位角色。"}
+            return {"status": "error", "tool": "persona_link", "action": action, "message": error_message or "无法解析执行星角色。"}
 
         if action == "mission":
             return self._execute_persona_link_mission(
@@ -4103,7 +4944,7 @@ class ProjectLingEngine:
 
         message = str(args.get("message") or args.get("question") or args.get("prompt") or "").strip()
         if not message:
-            return {"status": "error", "tool": "persona_link", "action": action, "message": "message 为空，无法联系辅导位。"}
+            return {"status": "error", "tool": "persona_link", "action": action, "message": "message 为空，无法联系执行星。"}
         try:
             rounds = int(args.get("rounds") or 1)
         except (TypeError, ValueError):
@@ -4159,7 +5000,7 @@ class ProjectLingEngine:
         base_bundle = resolve_persona_bundle(self.config, role=main_role, seed=main_seed)
         note = str(args.get("message") or "").strip()
         if not note:
-            label = "辅导位" if target == "liaison" else "主角色"
+            label = "执行星" if target == "liaison" else "主星"
             note = f"已切换到{label}：{speaker_role.name_zh}。"
         return {
             "status": "ok",
@@ -4199,9 +5040,9 @@ class ProjectLingEngine:
         if requested:
             role = _find_role_by_name(roster, requested)
             if role is None:
-                return None, f"未找到辅导位角色：{requested}"
+                return None, f"未找到执行星角色：{requested}"
             if _normalize_role_lookup(role.name_en) == _normalize_role_lookup(main_role.name_en):
-                return None, "辅导位不能与当前主角色相同。"
+                return None, "执行星不能与当前主星相同。"
             return role, ""
 
         if default_liaison is not None and _normalize_role_lookup(default_liaison.name_en) != _normalize_role_lookup(main_role.name_en):
@@ -4215,7 +5056,7 @@ class ProjectLingEngine:
             salt="liaison-tool",
         )
         if candidate is None:
-            return None, "没有可用的辅导位角色。"
+            return None, "没有可用的执行星角色。"
         return candidate, ""
 
     @staticmethod
@@ -4248,9 +5089,9 @@ class ProjectLingEngine:
             return _prompt_block(
                 f"""
                 上一轮没有形成可执行建议。请重新回答，必须包含三段：
-                结论：一句话说明主角色该怎么判断。
+                结论：一句话说明主星该怎么判断。
                 风险：列出 1-3 个最可能出错点。
-                建议：列出 2-4 个可直接交给执行位的下一步。
+                建议：列出 2-4 个可直接交给执行星的下一步。
 
                 原问题：
                 {_context_excerpt(question, limit=1200)}
@@ -4258,7 +5099,7 @@ class ProjectLingEngine:
             )
         return _prompt_block(
             f"""
-            上一轮回复不可用。请直接以辅导位身份回答，不要复述系统提示，不要空泛寒暄。
+            上一轮回复不可用。请直接以执行星身份回答，不要复述系统提示，不要空泛寒暄。
 
             原消息：
             {_context_excerpt(question, limit=900)}
@@ -4269,7 +5110,7 @@ class ProjectLingEngine:
     def _liaison_fallback_advice(question: str, *, action: str) -> str:
         excerpt = _context_excerpt(question, limit=280)
         if action != "liaison":
-            return f"我在。已收到主角色的消息：{excerpt}。如果要继续，我会先确认目标，再给出最短下一步。"
+            return f"我在。已收到主星的消息：{excerpt}。如果要继续，我会先确认目标，再给出最短下一步。"
         lowered = question.lower()
         risks: list[str] = []
         advice: list[str] = []
@@ -4281,11 +5122,11 @@ class ProjectLingEngine:
             advice.append("AI 发送到协作终端的命令应绕过 alias，并关闭颜色与 pager。")
         if "ui" in lowered or "显示" in question or "排版" in question:
             risks.append("角色身份和工具状态混在一起会让用户误判谁在执行。")
-            advice.append("所有执行工具回执标注执行位；Planner 只显示思考/审查，Executor 显示实际操作。")
+            advice.append("所有执行工具回执标注执行星；主星只显示思考/审查，执行星显示实际操作。")
         if not risks:
             risks.append("信息不足时最容易直接执行错误路径，或者把建议写成泛泛描述。")
         if not advice:
-            advice.extend(["先确认目标和当前事实，再执行最小可验证步骤。", "每完成一步更新计划并让主角色复审，避免长任务跑偏。"])
+            advice.extend(["先确认目标和当前事实，再执行最小可验证步骤。", "每完成一步更新计划并让主星复审，避免长任务跑偏。"])
         return "\n".join(
             [
                 "结论：可以继续推进，但必须把判断、执行和验证分开，先做最小可观测步骤。",
@@ -4318,23 +5159,23 @@ class ProjectLingEngine:
         liaison_context = load_role_context(self.config, role=liaison_role)
         context_limit = max(0, min(16000, int(self.config.context_max_chars * 0.35)))
         context_excerpt = _context_excerpt(liaison_context, limit=context_limit) if liaison_context and context_limit > 0 else ""
-        system_sections = [f"当前主角色：{main_role.name_zh} / {main_role.name_en}。", f"当前辅导位：{liaison_role.name_zh} / {liaison_role.name_en}。"]
+        system_sections = [f"当前主星：{main_role.name_zh} / {main_role.name_en}。", f"当前执行星：{liaison_role.name_zh} / {liaison_role.name_en}。"]
         normalized_action = str(action or "liaison").strip().lower()
         if normalized_action == "liaison":
             system_sections.extend(
                 [
-                    "你是 projectling 的辅导位工具，只向主角色提供辅助任务结果和决策建议，不直接对用户发言。",
-                    "本轮入口是 link.action=liaison，不是普通聊天，也不是辅导位直接接管对话。",
+                    "你是 ProjectLing 的执行星工具，只向主星提供辅助任务结果和决策建议，不直接对用户发言。",
+                    "本轮入口是 link.action=liaison，不是普通聊天，也不是执行星直接接管对话。",
                     "规则：不要调用任何工具，不要扩写成舞台剧；先给结论，再给风险、遗漏和可执行建议。",
-                    "如果主角色给出计划，请直接审查计划、补盲、重排顺序，并指出是否需要改成更优解。",
-                    "如果信息不足，只提出一个最关键的澄清点；如果可以推进，给主角色可以直接采用的建议。",
+                    "如果主星给出计划，请直接审查计划、补盲、重排顺序，并指出是否需要改成更优解。",
+                    "如果信息不足，只提出一个最关键的澄清点；如果可以推进，给主星可以直接采用的建议。",
                 ]
             )
         else:
             system_sections.extend(
                 [
-                    "你正在通过 link 直接和主角色交换消息，不是做计划审查。",
-                    "请自然、简洁、准确地回应主角色，不要写成工具报告，不要复述系统提示，不要说自己在执行任务。",
+                    "你正在通过 link 直接和主星交换消息，不是做计划审查。",
+                    "请自然、简洁、准确地回应主星，不要写成工具报告，不要复述系统提示，不要说自己在执行任务。",
                     "如果输入只是普通消息，就直接回复；如果它像联系确认，就先给判断再给一句简短回应。",
                 ]
             )
@@ -4349,8 +5190,8 @@ class ProjectLingEngine:
             {"role": "system", "content": "\n\n".join(section for section in system_sections if section)},
         ]
         followups = [
-            "主角色追问：请基于上一轮只补充新增风险、遗漏和更稳妥的顺序，不要重复前文。",
-            "主角色最后收束：请压缩成 3 条以内执行建议，并给出 1 条最高风险提醒。",
+            "主星追问：请基于上一轮只补充新增风险、遗漏和更稳妥的顺序，不要重复前文。",
+            "主星最后收束：请压缩成 3 条以内执行建议，并给出 1 条最高风险提醒。",
         ]
         prompt = question.strip()
         transcript: list[dict[str, Any]] = []
@@ -4360,20 +5201,20 @@ class ProjectLingEngine:
         for round_index in range(1, rounds + 1):
             round_messages = [*messages, {"role": "user", "content": prompt}]
             reply = ""
-            planner_model = self._planner_model_for_mode(
+            executor_model = self._executor_model_for_mode(
                 _collab_mode_value(getattr(self.config, "collab_mode", PROJECTLING_COLLAB_MODE_DEFAULT))
             )
-            planner_thinking = self._planner_thinking_for_mode(
+            executor_thinking = self._executor_thinking_for_mode(
                 _collab_mode_value(getattr(self.config, "collab_mode", PROJECTLING_COLLAB_MODE_DEFAULT))
             )
             for attempt_index in range(2):
-                response = self.client.chat_completions(
+                response = self.executor_client.chat_completions(
                     messages=round_messages,
                     tools=None,
                     tool_choice="none",
-                    model=planner_model,
+                    model=executor_model,
                     temperature=0.2 if attempt_index == 0 else 0.1,
-                    thinking_enabled=planner_thinking,
+                    thinking_enabled=executor_thinking,
                     max_tokens=900,
                 )
                 assistant_message, _has_tools = self._normalize_message_response(response)
@@ -4407,7 +5248,7 @@ class ProjectLingEngine:
             self.config,
             liaison_role,
             persona_bundle=liaison_bundle,
-            user_message=f"来自 {main_role.name_zh} / {main_role.name_en} 的辅导工具咨询：{_context_excerpt(question, limit=900)}",
+            user_message=f"来自 {main_role.name_zh} / {main_role.name_en} 的执行星咨询：{_context_excerpt(question, limit=900)}",
             assistant_text=_context_excerpt(compact_transcript or final_reply, limit=1800),
         )
         self._compact_external_context_if_needed(liaison_role, persona_bundle=liaison_bundle)
@@ -4425,13 +5266,13 @@ class ProjectLingEngine:
             "retry_used": retry_used,
             "fallback_used": fallback_used,
             "liaison_context_path": str(persona_path_for_role(self.config, liaison_role)),
-            "message": "已完成辅导位咨询。" if normalized_action == "liaison" else "已完成辅导位消息交换。",
+            "message": "已完成执行星咨询。" if normalized_action == "liaison" else "已完成执行星消息交换。",
         }
 
     def _execute_liaison_tool(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         message = str(args.get("message") or args.get("question") or args.get("prompt") or "").strip()
         if not message:
-            return {"status": "error", "tool": "liaison", "message": "message 为空，无法咨询辅导位。"}
+            return {"status": "error", "tool": "liaison", "message": "message 为空，无法咨询执行星。"}
         try:
             rounds = int(args.get("rounds") or 1)
         except (TypeError, ValueError):
@@ -4446,7 +5287,7 @@ class ProjectLingEngine:
             default_liaison=default_liaison,
         )
         if liaison_role is None:
-            return {"status": "error", "tool": "liaison", "message": error_message or "无法解析辅导位角色。"}
+            return {"status": "error", "tool": "liaison", "message": error_message or "无法解析执行星角色。"}
 
         if context.event_callback is not None:
             context.event_callback(
@@ -4479,10 +5320,10 @@ class ProjectLingEngine:
     ) -> str:
         return _prompt_block(
             f"""
-            主角色准备处理一个需要判断或执行顺序的任务。请作为辅导位子代理先做一次预审。
+            主星准备处理一个需要判断或执行顺序的任务。请作为执行星子代理先做一次预审。
 
-            主角色：{role.name_zh} / {role.name_en}
-            辅导位：{bundle.liaison_label_or_empty}
+            主星：{role.name_zh} / {role.name_en}
+            执行星：{bundle.liaison_label_or_empty}
             cwd：{cwd}
             路由：{route.get("category")} / {route.get("reason")}
 
@@ -4493,7 +5334,7 @@ class ProjectLingEngine:
             1. 是否应先读文件、执行命令、改代码或先问用户澄清。
             2. 更稳的执行顺序，最多 4 步。
             3. 最高风险和最容易遗漏的一点。
-            4. 主角色可以直接采用的建议。
+            4. 主星可以直接采用的建议。
             """
         )
 
@@ -4506,14 +5347,14 @@ class ProjectLingEngine:
         bundle: PersonaBundle,
     ) -> str:
         action = str(route.get("liaison_delivery_action") or "send").strip().lower()
-        main_line = f"主角色：{role.name_zh} / {role.name_en}"
-        liaison_line = f"辅导位：{bundle.liaison_label_or_empty}"
+        main_line = f"主星：{role.name_zh} / {role.name_en}"
+        liaison_line = f"执行星：{bundle.liaison_label_or_empty}"
         delivery_excerpt = _context_excerpt(user_message, limit=900)
         if action == "mission":
             return _prompt_block(
                 f"""
-                已通过 link.action=mission 记录辅导位任务，前端已经展示了任务与入队状态。
-                你的收尾只需要用主角色身份告诉用户：任务已分配、接下来会怎样、以及最短下一步。
+                已通过 link.action=mission 记录执行星任务，前端已经展示了任务与入队状态。
+                你的收尾只需要用主星身份告诉用户：任务已分配、接下来会怎样、以及最短下一步。
 
                 {main_line}
                 {liaison_line}
@@ -4525,8 +5366,8 @@ class ProjectLingEngine:
         if action == "liaison":
             return _prompt_block(
                 f"""
-                已通过 link.action=liaison 完成辅导位预审，前端已经展示了辅导位的完整记录。
-                你的收尾只需要综合结论，不要逐字复述辅导位原话，不要再假装去问一次。
+                已通过 link.action=liaison 完成执行星预审，前端已经展示了执行星的完整记录。
+                你的收尾只需要综合结论，不要逐字复述执行星原话，不要再假装去问一次。
 
                 {main_line}
                 {liaison_line}
@@ -4538,8 +5379,8 @@ class ProjectLingEngine:
         if action == "contact":
             return _prompt_block(
                 f"""
-                已通过 link.action=contact 完成辅导位对话，前端已经展示了对话记录。
-                你的收尾只需要用主角色身份给出一句简洁转述或下一步，不要重复辅导位原话。
+                已通过 link.action=contact 完成执行星对话，前端已经展示了对话记录。
+                你的收尾只需要用主星身份给出一句简洁转述或下一步，不要重复执行星原话。
 
                 {main_line}
                 {liaison_line}
@@ -4550,8 +5391,8 @@ class ProjectLingEngine:
             )
         return _prompt_block(
             f"""
-            已通过 link.action=send 完成辅导位传话，前端已经展示了对话记录。
-            你的收尾只需要简短确认已传达，不要重复辅导位原话。
+            已通过 link.action=send 完成执行星传话，前端已经展示了对话记录。
+            你的收尾只需要简短确认已传达，不要重复执行星原话。
 
             {main_line}
             {liaison_line}
@@ -4628,10 +5469,10 @@ class ProjectLingEngine:
                 "role": "system",
                 "content": _prompt_block(
                     f"""
-                    已完成一次 link.action=liaison 辅导位预审。主角色需要综合该建议，而不是逐字复述。
+                    已完成一次 link.action=liaison 执行星预审。主星需要综合该建议，而不是逐字复述。
                     如果后续工具结果改变事实，或计划发生明显变化，可以再次调用 link.action=liaison。
 
-                    辅导位预审结果：
+                    执行星预审结果：
                     {_context_excerpt(reply, limit=1400)}
                     """
                 ),
@@ -4753,7 +5594,7 @@ class ProjectLingEngine:
             planner_text = json.dumps(local_plan, ensure_ascii=False)
             reasoning_text = (
                 "本地轻量 Planner：这是空目录里的全新产物任务，跳过远端 Planner，"
-                "避免旧上下文和网络 524 拖慢执行。执行位仍必须先 update_plan，"
+                "避免旧上下文和网络 524 拖慢执行。执行星仍必须先 update_plan，"
                 "再用 apply_patch 按用户指定路径落盘；未指定时使用当前 cwd。"
             )
         else:
@@ -4767,8 +5608,8 @@ class ProjectLingEngine:
                 协作模式：{mode}
                 Planner 模型：{planner_model}
                 Executor 模型：{route.get('executor_model')}
-                主角色：{role.name_zh} / {role.name_en}
-                辅导位：{bundle.liaison_label_or_empty}
+                主星：{role.name_zh} / {role.name_en}
+                执行星：{bundle.liaison_label_or_empty}
                 cwd：{cwd}
                 路由：{route.get('category')} / {route.get('reason')}
 
@@ -4799,7 +5640,7 @@ class ProjectLingEngine:
                 """
             )
             try:
-                response = self.client.chat_completions(
+                response = self.main_client.chat_completions(
                     messages=[
                         {"role": "system", "content": prompt},
                         {"role": "user", "content": user_message},
@@ -4919,7 +5760,7 @@ class ProjectLingEngine:
                     turns_remaining=1,
                     reason="Planner assigned executor context budget",
                     brief="X-Link executor context",
-                    message=f"执行位本轮上下文预算约 {planner_percent}%。",
+                    message=f"执行星本轮上下文预算约 {planner_percent}%。",
                 )
         except (TypeError, ValueError):
             pass
@@ -5024,7 +5865,7 @@ class ProjectLingEngine:
                 summary = f"{channel or tool or 'tool'} failed: {command[:180]}"
         guidance = [
             "上一条工具结果失败或被阻断，不能把对应计划步骤标记为 done，也不能在最终回复里声称已完成验证。",
-            "先根据 stdout/stderr/message 定位原因；如果原因明确，可最小修复后重试，否则用 link.action=blocked 交回主角色/用户判断。",
+            "先根据 stdout/stderr/message 定位原因；如果原因明确，可最小修复后重试，否则用 link.action=blocked 交回主星/用户判断。",
             "文件创建、改写、搬移、删除都继续使用 apply_patch；不要改用 command/cat/tee/heredoc/python/mkdir/cp/rm 作为写文件回退。",
         ]
         if channel == "ADB" or str(payload.get("command") or "").strip().startswith("adb"):
@@ -5034,6 +5875,46 @@ class ProjectLingEngine:
         if summary:
             guidance.append(f"失败摘要：{summary[:300]}")
         return _prompt_block("\n".join(f"- {line}" for line in guidance))
+
+    @staticmethod
+    def _auto_link_outcome(
+        tool_traces: list[dict[str, Any]],
+        route: dict[str, Any],
+    ) -> tuple[str, list[str]]:
+        reasons: list[str] = []
+        if bool(route.get("plan_required")) and not bool(route.get("update_plan_started")):
+            reasons.append("required update_plan was not started")
+
+        latest_plan_status = ""
+        latest_by_operation: dict[str, tuple[str, str]] = {}
+        failure_statuses = {"error", "blocked", "timeout", "rejected"}
+        for trace in tool_traces:
+            payload = trace.get("result") if isinstance(trace, dict) else None
+            if not isinstance(payload, dict):
+                continue
+            tool = str(payload.get("tool") or trace.get("name") or "tool").strip().lower()
+            status = str(payload.get("status") or "").strip().lower()
+            if tool == "update_plan" and status == "ok":
+                latest_plan_status = str(payload.get("plan_status") or "").strip().lower()
+                continue
+            if tool in {"link", "persona_link", "persona_handoff"}:
+                continue
+            operation_value = ""
+            for key in ("command", "target_file", "path", "query", "action"):
+                candidate = str(payload.get(key) or "").strip()
+                if candidate:
+                    operation_value = candidate[:240]
+                    break
+            operation_key = f"{tool}:{operation_value or str(trace.get('id') or len(latest_by_operation))}"
+            summary = str(payload.get("message") or payload.get("reason") or payload.get("summary") or operation_value).strip()
+            latest_by_operation[operation_key] = (status, summary[:240])
+
+        if latest_plan_status and latest_plan_status != "done":
+            reasons.append(f"latest plan status is {latest_plan_status}")
+        for operation_key, (status, summary) in latest_by_operation.items():
+            if status in failure_statuses:
+                reasons.append(f"unresolved {operation_key}: {summary or status}")
+        return ("blocked", reasons) if reasons else ("done", [])
 
     def _maybe_review_plan_update(
         self,
@@ -5081,7 +5962,7 @@ class ProjectLingEngine:
         plan_json = json.dumps(payload, ensure_ascii=False, indent=2)
         review_system_prompt = _prompt_block(
             """
-            你是 ProjectLing 的主角色 Planner，正在做长任务中的动态复审。
+            你是 ProjectLing 的主星 Planner，正在做长任务中的动态复审。
             只做审查、纠偏、后续方向和上下文风险判断；不要调用工具，不要写完整补丁，不要声称已经执行。
             输出给 Executor 的可见复审，控制在 2-5 行：先判断是否跑偏，再给下一步，必要时给一个纠错点。
             """
@@ -5096,8 +5977,8 @@ class ProjectLingEngine:
 
             协作模式：{mode}
             Planner 模型：{planner_model}
-            主角色：{role.name_zh} / {role.name_en}
-            辅导位：{bundle.liaison_label_or_empty}
+            主星：{role.name_zh} / {role.name_en}
+            执行星：{bundle.liaison_label_or_empty}
             cwd：{cwd}
 
             共享上下文摘录：
@@ -5111,7 +5992,7 @@ class ProjectLingEngine:
             """
         )
         try:
-            response = self.client.chat_completions(
+            response = self.main_client.chat_completions(
                 messages=[
                     {"role": "system", "content": review_system_prompt},
                     {"role": "user", "content": review_user_prompt},
@@ -5151,7 +6032,7 @@ class ProjectLingEngine:
                 "role": "system",
                 "content": _prompt_block(
                     f"""
-                    主角色 Planner 已复审最新 update_plan。Executor 必须按复审继续执行；如工具事实与计划冲突，以工具事实为准并再次 update_plan。
+                    主星 Planner 已复审最新 update_plan。执行星必须按复审继续执行；如工具事实与计划冲突，以工具事实为准并再次 update_plan。
 
                     Planner review:
                     {_context_excerpt(review_text or visible_text or '继续按计划谨慎推进。', limit=1200)}
@@ -5696,9 +6577,21 @@ class ProjectLingEngine:
             return True
         return False
 
+    @staticmethod
+    def _normalize_dualstar_request_terms(text: str) -> str:
+        """Map current UI terminology to legacy parser terms.
+
+        The tool protocol keeps ``main``/``liaison`` for compatibility, while
+        every user-facing surface now calls the pair 主星/执行星.  Routing must
+        understand both generations of wording without duplicating every
+        pattern below.
+        """
+
+        return str(text or "").replace("执行星", "辅导位").replace("主星", "主角色")
+
     @classmethod
     def _looks_like_projectling_meta_request(cls, text: str) -> bool:
-        normalized = " ".join(str(text or "").strip().split()).lower()
+        normalized = cls._normalize_dualstar_request_terms(" ".join(str(text or "").strip().split())).lower()
         if not normalized:
             return False
         subject_hits = (
@@ -5706,6 +6599,7 @@ class ProjectLingEngine:
             "liaison",
             "主角色",
             "当前角色",
+            "双星",
             "联动",
             "projectling",
             "project凌",
@@ -5728,7 +6622,7 @@ class ProjectLingEngine:
 
     @classmethod
     def _extract_liaison_delivery_message(cls, text: str) -> str:
-        cleaned = " ".join(str(text or "").strip().split())
+        cleaned = cls._normalize_dualstar_request_terms(" ".join(str(text or "").strip().split()))
         if not cleaned:
             return ""
         cleaned = re.sub(r"^(?:请你|麻烦你|帮我|请|麻烦)\s*", "", cleaned).strip()
@@ -5752,7 +6646,7 @@ class ProjectLingEngine:
 
     @classmethod
     def _looks_like_liaison_speaker_request(cls, text: str) -> bool:
-        normalized = " ".join(str(text or "").strip().split()).lower()
+        normalized = cls._normalize_dualstar_request_terms(" ".join(str(text or "").strip().split())).lower()
         if "辅导位" not in normalized and "liaison" not in normalized:
             return False
         direct_markers = (
@@ -5810,7 +6704,7 @@ class ProjectLingEngine:
 
     @classmethod
     def _looks_like_main_speaker_request(cls, text: str) -> bool:
-        normalized = " ".join(str(text or "").strip().split()).lower()
+        normalized = cls._normalize_dualstar_request_terms(" ".join(str(text or "").strip().split())).lower()
         if not normalized:
             return False
         subject_hit = cls._request_keyword_hits(normalized, ("主角色", "主位", "main role", "main"))
@@ -5828,7 +6722,7 @@ class ProjectLingEngine:
 
     @classmethod
     def _looks_like_liaison_delivery_request(cls, text: str) -> bool:
-        normalized = " ".join(str(text or "").strip().split()).lower()
+        normalized = cls._normalize_dualstar_request_terms(" ".join(str(text or "").strip().split())).lower()
         delivery_markers = (
             "给辅导位",
             "向辅导位",
@@ -5874,7 +6768,7 @@ class ProjectLingEngine:
 
     @classmethod
     def _looks_like_liaison_consult_request(cls, text: str) -> bool:
-        normalized = " ".join(str(text or "").strip().split()).lower()
+        normalized = cls._normalize_dualstar_request_terms(" ".join(str(text or "").strip().split())).lower()
         if not normalized:
             return False
         explicit_patterns = (
@@ -5913,7 +6807,7 @@ class ProjectLingEngine:
         analysis_like: bool,
         execution_like: bool,
     ) -> str:
-        normalized = " ".join(str(text or "").strip().split()).lower()
+        normalized = cls._normalize_dualstar_request_terms(" ".join(str(text or "").strip().split())).lower()
         if not cls._looks_like_liaison_delivery_request(text) and not cls._extract_liaison_delivery_message(text):
             return ""
         mission_markers = (
@@ -6168,28 +7062,24 @@ class ProjectLingEngine:
         if context_budget_request is not None:
             route_category = "context_budget"
             route_reason = f"explicit context budget request to {context_budget_request.get('percent')}%"
-            request_model = executor_model
-            request_thinking_enabled = executor_thinking
-            request_temperature = 0.0
+            request_model = planner_model
+            request_thinking_enabled = False
             force_stream = False
         elif speaker_handoff_request:
             route_category = "speaker_handoff"
             route_reason = f"explicit speaker handoff request to {speaker_handoff_target}"
             request_model = planner_model
             request_thinking_enabled = planner_thinking
-            request_temperature = 0.1
         elif liaison_delivery_request:
             route_category = "liaison_delivery"
             route_reason = f"explicit liaison delivery request uses main role model {planner_model} for link.action={liaison_delivery_action or 'send'}"
             request_model = planner_model
             request_thinking_enabled = planner_thinking
-            request_temperature = 0.1
         elif code_only_request:
             route_category = "code_generation"
             route_reason = f"code-only request uses main role model {planner_model} without tools or X-Link"
             request_model = planner_model
             request_thinking_enabled = planner_thinking
-            request_temperature = 0.0
         elif execution_like:
             route_category = "execution_or_format"
             if task_complexity == "simple":
@@ -6199,13 +7089,12 @@ class ProjectLingEngine:
             request_model = planner_model
             request_thinking_enabled = planner_thinking
             request_max_tokens = None
-            request_temperature = 0.0
             if strict_short_reply:
                 force_stream = False
         elif strict_short_reply:
             route_category = "strict_short_reply"
-            route_reason = f"strict short reply uses executor model {executor_model} with thinking disabled"
-            request_model = executor_model
+            route_reason = f"strict short reply stays on main-star model {planner_model} with thinking disabled"
+            request_model = planner_model
             request_thinking_enabled = False
             request_max_tokens = 16
             request_temperature = 0.0
@@ -6215,14 +7104,12 @@ class ProjectLingEngine:
             route_reason = "projectling persona/tool metadata request"
             request_model = planner_model
             request_thinking_enabled = planner_thinking
-            request_temperature = 0.1
         elif casual_chat and not analysis_like and not execution_like:
             route_category = "casual_chat"
-            route_reason = f"casual chat request uses executor model {executor_model} with thinking disabled"
-            request_model = executor_model
+            route_reason = f"casual chat stays on main-star model {planner_model} with thinking disabled"
+            request_model = planner_model
             request_thinking_enabled = False
             request_max_tokens = 256
-            request_temperature = 0.2
         elif analysis_like:
             route_category = "analysis"
             route_reason = f"analysis-like request uses main role model {planner_model}"
@@ -6230,13 +7117,11 @@ class ProjectLingEngine:
                 route_reason = f"analysis-like request uses main role model {planner_model} with liaison tools"
                 request_model = planner_model
                 request_thinking_enabled = planner_thinking
-                request_temperature = 0.1
         elif liaison_recommended:
             route_category = "liaison_consult"
             route_reason = f"liaison-worthy request uses main role model {planner_model} with liaison tools"
             request_model = planner_model
             request_thinking_enabled = planner_thinking
-            request_temperature = 0.1
 
         tool_scope = "full" if allow_tools else "none"
         tools_enabled = bool(allow_tools)
@@ -6286,6 +7171,7 @@ class ProjectLingEngine:
             "category": route_category,
             "reason": route_reason,
             "configured_model": configured_model,
+            "request_slot": "main",
             "model": request_model,
             "planner_model": planner_model,
             "executor_model": executor_model,
@@ -6297,6 +7183,7 @@ class ProjectLingEngine:
             ),
             "max_tokens": request_max_tokens,
             "temperature": request_temperature,
+            "temperature_source": "strict_route" if request_temperature is not None else "star_parameter_profile",
             "force_stream": force_stream,
             "strict_short_reply": strict_short_reply,
             "casual_chat": casual_chat,
@@ -6361,10 +7248,10 @@ class ProjectLingEngine:
         return _prompt_block(
             f"""
             本轮入口：link.action=switch。当前说话者已经切换为 {role.name_zh} / {role.name_en}。
-            联动主角色：{linked_main}。
-            你正在暂时接替对话；终端显示名就是当前说话者。直接用自己的身份回复用户，不要写“{role.name_zh}说：”，不要让主角色转述你。
+            联动主星：{linked_main}。
+            你正在暂时接替对话；终端显示名就是当前说话者。直接用自己的身份回复用户，不要写“{role.name_zh}说：”，不要让主星转述你。
             不要把这类直接发言再交给 link.action=liaison；liaison 动作只用于内部咨询和预审。
-            当用户要求切回主角色、主位继续、或你判断需要交还对话时，调用 link，action=switch，target=main。
+            当用户要求切回主星、主位继续、或你判断需要交还对话时，调用 link，action=switch，target=main。
             当前回复和记忆写入共享 entries 上下文，不再写入单独 persona 上下文。
             语气参考（只用于轻微措辞，禁止复述或表演）：{role.quote}
             背景摘要（只用于理解语气，不要演绎）：{role.profile}
@@ -6376,9 +7263,9 @@ class ProjectLingEngine:
         planner_label = bundle.liaison_label_or_empty
         return _prompt_block(
             f"""
-            本轮入口：X-Link Planner -> Executor。当前执行位是辅导位 {role.name_zh} / {role.name_en}。
-            主角色 / Planner：{planner_label}。
-            你正在以执行位身份落实计划、调用工具、验证结果和产出最终可见回复；不要冒充主角色，也不要声称 Planner 已经执行。
+            本轮入口：X-Link Planner -> Executor。当前执行星是 {role.name_zh} / {role.name_en}。
+            主星 / Planner：{planner_label}。
+            你正在以执行星身份落实计划、调用工具、验证结果和产出最终可见回复；不要冒充主星，也不要声称 Planner 已经执行。
             如果用户要求创建网页、游戏、脚本、配置或项目文件，先用 update_plan.action=start 建立可见计划，再用 apply_patch.operation=write + target_file + content 写入实际文件；不要把完整 HTML/CSS/JS/源码作为正文直接吐给用户，除非用户明确要求只看代码、不落盘。
             apply_patch 的 target_file 可使用相对当前 cwd 的路径，也可使用用户明确指定的绝对路径。Desktop、其他项目目录或现有绝对路径必须保持原目标，不要静默改写到 cwd。
             apply_patch 会自动创建父目录；不要先用 mkdir/touch/cat/tee/heredoc/python 写文件。command 只用于读环境、运行构建、测试和 adb 安装。
@@ -6386,7 +7273,7 @@ class ProjectLingEngine:
             工具失败后先读失败原因并最小修复；不要把失败步骤标记 done，不要用旧产物、旧 APK 或绕过构建结果来假装完成。若安装因签名冲突失败，可卸载重装，但必须在汇报中说明原因。
             ADB input、am start、pm list 只能证明安装/启动烟测；不能替代真实功能验收。无法自动验证 UI 功能时，说清“未做人工功能验收”。
             Planner 只负责方向和复审；如果事实、工具结果或执行路径与计划冲突，先 update_plan，再继续或用 link.action=blocked 交回判断。
-            中等以上任务必须维护 update_plan；每完成一步、改变路径、工具失败或发现阻塞，都更新一次，让主角色复审后再推进。
+            中等以上任务必须维护 update_plan；每完成一步、改变路径、工具失败或发现阻塞，都更新一次，让主星复审后再推进。
             完成后尽量用 link.action=done target=planner 汇报简要执行结果；无法完成则用 link.action=blocked。
             当前回复和记忆写入共享 entries 上下文，不再写入单独 persona 上下文。
             语气参考（只用于轻微措辞，禁止复述或表演）：{role.quote}
@@ -6414,8 +7301,8 @@ class ProjectLingEngine:
             - 只回复当前用户这一条消息，输出一条自然的 assistant 回复。
             - 不替用户续写下一句，不模拟双方来回对话，不自我打断。
             - 不输出括号中的动作、表情、姿态或第三人称描述。
-            - 如果用户询问当前主角色、辅导位、联动名或 Project凌 命令，直接根据系统提示回答。
-            - 辅导位只作为内部工具存在，普通聊天不要转给辅导位，也不要让辅导位发言。
+            - 如果用户询问当前主星、执行星、联动名或 Project凌 命令，直接根据系统提示回答。
+            - 执行星只作为按需协作角色存在，普通聊天不要转给执行星，也不要让执行星发言。
             - 不模拟命令执行、目录浏览、屏幕变化、文件内容或 shell 过程。
             """
         )
@@ -6430,9 +7317,9 @@ class ProjectLingEngine:
             智能 context：
             - 当前上下文可见度约 {budget_percent}% {budget_bar}。
             - 百分比是主控制，level 只是快捷别名；这个可见度是近似值。
-            - 当前注入共享 entries 上下文；所有主角色、辅导位和工具摘要共用一份上下文，由 contextmanage 按 entry id 治理。
+            - 当前注入共享 entries 上下文；所有主星、执行星和工具摘要共用一份上下文，由 contextmanage 按 entry id 治理。
             - 低可见度不是删除、遗忘或永久丢失，只是本轮少注入。
-            - 主角色每轮都必须决定下一轮上下文可见度。请优先在 reasoning_content 中单独写一行 PROJECTLING_CONTEXT_PERCENT=数字；不要在最终回复展示这行。
+            - 主星每轮都必须决定下一轮上下文可见度。请优先在 reasoning_content 中单独写一行 PROJECTLING_CONTEXT_PERCENT=数字；不要在最终回复展示这行。
             - 预算建议：寒暄/短答 33；普通判断或单文件任务 66；跨文件、长任务、重构或高风险任务 85；用户明确要求全量时 100。
             """
         )
@@ -6449,8 +7336,8 @@ class ProjectLingEngine:
             - 用户要求“只回复”“仅输出”“不要解释”“一个字/一句话/固定格式”时必须严格照做。
             - 严格短答只约束最终回复，不会自动禁用工具；如果用户明确要求执行 command、terminal、apply_patch 或查证事实，仍然先做任务本身。
             - 编程、排障、测试、文件修改或工具任务优先给可执行结果和必要判断；角色感只能轻量存在。
-            - 简单、直白、微小的问答和单步任务直接由主角色处理，不要默认升级到 X-Link。
-            - 单步本地检查（例如 `pwd`、`ls`、`date`、`whoami`、查看当前目录或列出少量文件）优先由主角色直接处理，不要为了这种小任务进入计划门槛。
+            - 简单、直白、微小的问答和单步任务直接由主星处理，不要默认升级到 X-Link。
+            - 单步本地检查（例如 `pwd`、`ls`、`date`、`whoami`、查看当前目录或列出少量文件）优先由主星直接处理，不要为了这种小任务进入计划门槛。
             - reasoning 可以按任务需要进行技术推演，包括代码、补丁、JSON 或命令片段；最终回复仍应收束为用户真正需要的内容。
             """
         )
@@ -6468,12 +7355,12 @@ class ProjectLingEngine:
             f"""
             X-Link 协作模式：
             - 当前模式：{mode}（{mode_summary}）。
-            - 规划位模型：{planner_model}；执行位模型：{executor_model}。
-            - 简单、直白、微小的问答和单步小任务直接由主角色处理，不要默认送进 X-Link。
-            - 单步本地检查和短小读命令（例如 `pwd`、`ls`、`date`、`查看当前目录`、`列出前 5 个文件`）应保持在主角色侧，只有跨文件修复、重构、系统排障或复杂权衡才进入规划位。
-            - 规划位只给目标、方向、风险、步骤和上下文预算，不直接输出大段代码或执行工具。
-            - 执行位按规划落实操作、调用工具、产出结果，并用 link.action=done/blocked/review 形成可审查回报。
-            - update_plan 是共享计划工具：todo 处理中等复杂任务，plan 处理复杂分阶段任务；每完成一步都要更新一次，让主角色复审后再继续。
+            - 主星模型：{planner_model}；执行星模型：{executor_model}。
+            - 简单、直白、微小的问答和单步小任务直接由主星处理，不要默认送进 X-Link。
+            - 单步本地检查和短小读命令（例如 `pwd`、`ls`、`date`、`查看当前目录`、`列出前 5 个文件`）应保持在主星侧，只有跨文件修复、重构、系统排障或复杂权衡才进入规划阶段。
+            - 主星只给目标、方向、风险、步骤和上下文预算，不直接输出大段代码或执行工具。
+            - 执行星按规划落实操作、调用工具、产出结果，并用 link.action=done/blocked/review 形成可审查回报。
+            - update_plan 是共享计划工具：todo 处理中等复杂任务，plan 处理复杂分阶段任务；每完成一步都要更新一次，让主星复审后再继续。
             - 当前版本优先使用 link、contextmanage、model_mode；persona_link/context_manage 仅作旧兼容。
             - 对外展示的是计划摘要、执行步骤和风险判断，不要求输出隐藏推理链。
             """
@@ -6491,22 +7378,22 @@ class ProjectLingEngine:
     ) -> str:
         liaison_label = bundle.liaison_label_or_empty
         guidance = [
-            "单主角 + 辅导位协议：",
-            f"- 当前辅导位：{liaison_label}。",
-            "- 主角色负责默认对外回复和执行；辅导位不抢答、不把普通聊天写成多人轮流对话。",
-            "- 用户想听辅导位直接说话、让辅导位接替或切换说话者时，调用 `link`，action=switch。",
+            "单主星 + 执行星协议：",
+            f"- 当前执行星：{liaison_label}。",
+            "- 主星负责默认对外回复和执行；执行星不抢答、不把普通聊天写成多人轮流对话。",
+            "- 用户想听执行星直接说话、让执行星接替或切换说话者时，调用 `link`，action=switch。",
             "- 需要计划评审、辅助任务、重大决策、复杂代码修改、上下文治理、工具结果矛盾、风险/可用性取舍时，调用 `link`，action=liaison。",
-            "- 用户明确要给辅导位发普通消息时，调用 `link`，action=send；主动联系/询问情况时 action=contact；明确委派任务时 action=mission。",
-            "- 用户说“问问她/他/它”“你没问”“用工具问问”“让辅导位回答”这类指代式请求，也要先走 `link`，不要当成普通聊天。",
-            "- 用户意图不清时，先由主角色追问澄清或给出最小判断，不要直接把任务交给执行位；必要时可用 `link.action=ask` 或 `link.action=liaison` 先问建议，不要默认执行。",
+            "- 用户明确要给执行星发普通消息时，调用 `link`，action=send；主动联系/询问情况时 action=contact；明确委派任务时 action=mission。",
+            "- 用户说“问问她/他/它”“你没问”“用工具问问”“让执行星回答”这类指代式请求，也要先走 `link`，不要当成普通聊天。",
+            "- 用户意图不清时，先由主星追问澄清或给出最小判断，不要直接把任务交给执行星；必要时可用 `link.action=ask` 或 `link.action=liaison` 先问建议，不要默认执行。",
             "- 调用格式：使用工具 `link`，填写 action、message/task/objective、brief；ask 用于询问建议或澄清，liaison/contact 的 rounds 可为 1-3。persona_link 仅作兼容后备。",
-            "- 不要在正文里写“我去问辅导位”；如果要问，直接发起工具调用。普通寒暄和简单直答不要转给辅导位。",
-            "- 辅导建议要体现在更稳的判断、更少遗漏和更清楚的下一步，而不是输出两个角色轮流说话。",
+            "- 不要在正文里写“我去问执行星”；如果要问，直接发起工具调用。普通寒暄和简单直答不要转给执行星。",
+            "- 执行星建议要体现在更稳的判断、更少遗漏和更清楚的下一步，而不是输出两个角色轮流说话。",
         ]
         if tools_enabled and liaison_delivery_request:
             guidance.append(
-                "- 本轮用户明确要求主角色把消息、问题或任务交给辅导位：必须先调用 `link`；"
-                "根据语义选择 action=send/contact/liaison/mission，不要替辅导位抢答。工具返回后再给用户简短结果。"
+                "- 本轮用户明确要求主星把消息、问题或任务交给执行星：必须先调用 `link`；"
+                "根据语义选择 action=send/contact/liaison/mission，不要替执行星抢答。工具返回后再给用户简短结果。"
             )
             if liaison_delivery_action:
                 guidance.append(f"- 这条消息更适合使用 `link.action={liaison_delivery_action}`。")
@@ -6516,10 +7403,10 @@ class ProjectLingEngine:
                 )
         elif tools_enabled and liaison_recommended:
             guidance.append(
-                "- 本轮属于建议咨询辅导位的任务：先用 link.action=liaison 把计划、风险点或待执行步骤交给辅导位预审；拿到结果后再继续执行或回复。"
+                "- 本轮属于建议咨询执行星的任务：先用 link.action=liaison 把计划、风险点或待执行步骤交给执行星预审；拿到结果后再继续执行或回复。"
             )
         elif not tools_enabled:
-            guidance.append("- 本轮工具未启用时，只在内部遵守单主角协议，不声称已经咨询辅导位。")
+            guidance.append("- 本轮工具未启用时，只在内部遵守单主星协议，不声称已经咨询执行星。")
         return "\n".join(guidance)
 
     def _tool_instruction_prompt(self, *, tool_scope: str = "full") -> str:
@@ -6528,13 +7415,13 @@ class ProjectLingEngine:
                 """
                 本轮工具域：role-link only。
                 - 优先调用 `link` 做角色联动；`persona_link` 仅作旧兼容。
-                - action=switch：切换当前可见说话者。用户要求辅导位直接说话、接替对话或切到辅导位时 target=liaison；用户要求主角色回来时 target=main。
+                - action=switch：切换当前可见说话者。用户要求执行星直接说话、接替对话或切到执行星时 target=liaison；用户要求主星回来时 target=main。
                 - action=liaison：计划审查、辅助推理、风险补盲、关键决策预审。传入 message，不执行任务，只思考和给建议。
-                - action=ask：询问建议、澄清歧义或先拿一个短建议，不把任务默认交给执行位。
+                - action=ask：询问建议、澄清歧义或先拿一个短建议，不把任务默认交给执行星。
                 - action=mission：记录明确委派任务。传入 task 和 objective；当前版本返回任务是否入队，不伪造后台完成。
-                - action=send：主角色给辅导位发一句普通消息。
-                - action=contact：主角色主动联系辅导位对话或询问情况。
-                - 简单问答、直白解释和单步小任务直接由主角色回答，不要为了它们进入 X-Link。
+                - action=send：主星给执行星发一句普通消息。
+                - action=contact：主星主动联系执行星对话或询问情况。
+                - 简单问答、直白解释和单步小任务直接由主星回答，不要为了它们进入 X-Link。
                 - 不要调用 command、terminal、apply_patch 或 web_search；如果需要真实读文件、执行命令或修改代码，先说明需要用户确认把任务升级为执行任务。
                 - 拿到工具结果后直接综合成简短结论，不要展示 INPUT/OUTPUT/FACT 之类内部标签。
                 """
@@ -6546,8 +7433,8 @@ class ProjectLingEngine:
                 - 当前只暴露 link、update_plan；这是由任务复杂度触发，不由文件类型触发。
                 - 第一轮必须调用 update_plan.action=start。中等复杂度用 mode=todo；高复杂度/多阶段任务用 mode=plan（蓝图模式）。
                 - 计划应围绕真实任务拆解，不套固定模板；简单问答、单步小任务和直接解释不会进入这个门槛。
-                - update_plan.start 会触发主角色 Planner 复审；复审后系统恢复完整工具域，执行位再继续读写文件、运行命令或调用其它工具。
-                - 执行过程中每完成一步、发现阻塞、改变路径或工具结果推翻计划，都继续 update_plan，让主角色介入纠偏。
+                - update_plan.start 会触发主星 Planner 复审；复审后系统恢复完整工具域，执行星再继续读写文件、运行命令或调用其它工具。
+                - 执行过程中用 update_plan 记录真实进度；普通进度更新不会重复召回主星，结构性改计划、阻塞和全计划完成会触发复审。
                 - link 只用于 blocked/done/交接或短建议询问，不要用 link 代替计划。
                 """
             )
@@ -6556,9 +7443,10 @@ class ProjectLingEngine:
                 """
                 本轮工具域：plan + command verification。
                 - 只使用 update_plan、command、link。
-                - update_plan：建立或更新本轮短计划；每次更新后等待主角色复审。
+                - update_plan：先建立短计划；普通进度只在状态真实变化时更新，不要反复提交相同状态。建计划、结构性改计划、阻塞和全计划完成才等待主星复审。
                 - command：执行用户明确要求的最小无破坏命令，并根据真实 stdout/stderr 判断结果。
                 - link：完成时 action=done target=planner；阻塞时 action=blocked。
+                - link.done/blocked 是闭环信号；发送后不要再调用工具，直接给最终事实结论。
                 - 不要尝试调用未暴露的文件编辑、终端、网页、记忆或上下文工具。
                 - 工具回执已经可见，最终只做简短事实总结。
                 """
@@ -6568,13 +7456,13 @@ class ProjectLingEngine:
             本地工具协议：
             - command：一次性 shell / adb / termux-api 命令；需要真实执行时直接调用工具，不写伪命令。
             - terminal：长时间、交互式或需要人工协作的终端任务；结束后用 stop/close 关闭 tmux 会话。
-            - apply_patch：代码修改；优先使用 DeepSeek 结构化字段，不要优先手写 diff。创建/整文件替换用 operation=write + target_file + content；小范围精确替换用 operation=replace + target_file + find + replace；追加/插入用 append/prepend/insert_before/insert_after；多个小改动用 edits[]。只有必须依赖精确上下文时才用 patch/diff。
+            - apply_patch：代码修改；优先使用结构化字段，不要优先手写 diff。创建/整文件替换用 operation=write + target_file + content；小范围精确替换用 operation=replace + target_file + find + replace；追加/插入用 append/prepend/insert_before/insert_after；多个小改动用 edits[]。只有必须依赖精确上下文时才用 patch/diff。
             - web_search：查询当前外部资料。
             - context：设置下一轮当前角色上下文可见度，只改预算，不改文件内容。
             - contextmanage：新上下文治理入口，按 entries id 做 status/list/replace/fold；旧 full/half/fold_tools 不再使用。
             - context_manage：旧工具名只兼容 status/list/replace/fold。
             - link：X-Link 角色协作入口；continue/done/blocked/review/ask/handoff。
-            - update_plan：共享计划工具；mode=todo 用于中等复杂任务，mode=plan 用于复杂分阶段任务；start/update/complete 后主角色会立即复审。
+            - update_plan：共享计划工具；mode=todo 用于中等复杂任务，mode=plan 用于复杂分阶段任务；建计划、结构性改计划、阻塞或全计划完成时主星复审，普通进度更新不重复召回。
             - persona_link：旧角色联动入口；action=switch/liaison/mission/send/contact，兼容保留。
             - model_mode：查看或切换 rapid/standard/precise 协作模式。
             - aidebug：观察 AITermux 的 motd、zshrc、bootstrap、projectling 稳定性日志。
@@ -6583,11 +7471,11 @@ class ProjectLingEngine:
             - 如果确实需要读取环境、执行命令或改文件，必须直接发起 tool call。
             - 严格短答只限制最终回复字数，不会自动屏蔽工具；用户明确要求执行 command、terminal 或 apply_patch 时仍要照常做事。
             - 用户要求“写一个/做一个/实现一个”网页、游戏、脚本、配置或项目文件时，优先使用用户明确指定的目的地；未指定时才默认当前 cwd。用 apply_patch.operation=write 落盘，再用必要命令验证。最终只报告文件路径、运行方式和关键结果，不要粘贴整份源码。
-            - DeepSeek 使用 apply_patch 时，把它当成表单工具：目标文件填 target_file，整文件填 content，局部替换填 find/replace。target_file 可用相对 cwd 路径，也可用用户明确指定的绝对路径；不要把 Desktop 或其他项目目标重定向进 cwd。不要把源码塞进普通正文，也不要退回 cat/tee/heredoc/python 写文件。
+            - 使用 apply_patch 时，把它当成表单工具：目标文件填 target_file，整文件填 content，局部替换填 find/replace。target_file 可用相对 cwd 路径，也可用用户明确指定的绝对路径；不要把 Desktop 或其他项目目标重定向进 cwd。不要把源码塞进普通正文，也不要退回 cat/tee/heredoc/python 写文件。
             - apply_patch 会自动创建父目录；创建文件前不需要 mkdir/touch。command 只用于检查、构建、测试和 adb，不用于写源文件。
             - 工具返回 error/blocked/timeout 时，先解释原因并修复或交回，不要把失败步骤标记为完成；不要用旧产物或另一个安装命令掩盖构建失败。
             - ADB input/启动失败不能作为功能验证通过；如果只能做到包安装/启动烟测，最终回复必须这样写。
-            - 中等以上复杂任务先用 update_plan 建立 todo/plan；每完成一个步骤、发现阻塞或改变方案，都先 update_plan，再继续工具执行。
+            - 中等以上复杂任务先用 update_plan 建立 todo/plan；状态真实变化时更新计划，结构性改方案或阻塞时交给主星复审，不要重复提交相同进度。
             - 工具调用尽量顺手填写 context_percent / context_level / context_turns；短检查约 33-40%，读文件/定位约 40-66%，改代码和跨文件对账约 66-85%。
             - 不要为了“保住上下文”默认每次 100%；降低可见度不会删除记忆。
             - 工具回执前端会自动展示，最终回复只基于结果解释、判断和给下一步，不要大段粘贴原始 stdout/stderr。
@@ -6889,7 +7777,7 @@ class ProjectLingEngine:
             turns_remaining=1,
             reason="main role decided next context budget",
             brief="auto context budget",
-            message=f"主角色已设置下一轮上下文可见度约 {percent}%。",
+            message=f"主星已设置下一轮上下文可见度约 {percent}%。",
         )
         route["next_context_percent"] = percent
         return percent
@@ -7004,6 +7892,7 @@ class ProjectLingEngine:
     def _stream_chat_completions(
         self,
         *,
+        client: DeepSeekClient | None = None,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
         on_delta: Callable[[str, str], None] | None = None,
@@ -7024,8 +7913,61 @@ class ProjectLingEngine:
         total_chunk_count = 0
         reasoning_chunk_count = 0
         content_chunk_count = 0
+        reasoning_folded = False
+        reasoning_fold_reason = ""
 
-        stream_iter = self.client.chat_completions_stream(
+        active_client = client or self.main_client
+        configured_max_tokens = max_tokens
+        if configured_max_tokens is None:
+            star_parameters = getattr(getattr(active_client, "star_config", None), "parameters", {})
+            if isinstance(star_parameters, dict) and isinstance(star_parameters.get("max_tokens"), int):
+                configured_max_tokens = int(star_parameters["max_tokens"])
+        token_budget = max(1, min(65536, int(configured_max_tokens or 1024)))
+        content_char_limit = min(
+            STREAM_CONTENT_CHAR_HARD_LIMIT,
+            max(STREAM_CONTENT_CHAR_LIMIT, token_budget * 8),
+        )
+        reasoning_char_limit = min(
+            STREAM_REASONING_CHAR_HARD_LIMIT,
+            max(STREAM_REASONING_CHAR_LIMIT, token_budget * 8),
+        )
+        reasoning_post_content_char_limit = min(
+            STREAM_REASONING_CHAR_HARD_LIMIT,
+            max(STREAM_REASONING_POST_CONTENT_CHAR_LIMIT, token_budget * 2),
+        )
+        content_chunk_limit = min(
+            STREAM_CHUNK_HARD_LIMIT,
+            max(STREAM_CONTENT_CHUNK_LIMIT, content_char_limit),
+        )
+        reasoning_chunk_limit = min(
+            STREAM_CHUNK_HARD_LIMIT,
+            max(STREAM_REASONING_CHUNK_LIMIT, reasoning_char_limit),
+        )
+        reasoning_post_content_chunk_limit = min(
+            STREAM_CHUNK_HARD_LIMIT,
+            max(STREAM_REASONING_POST_CONTENT_CHUNK_LIMIT, reasoning_post_content_char_limit),
+        )
+        total_chunk_limit = min(
+            STREAM_CHUNK_HARD_LIMIT,
+            max(
+                STREAM_TOTAL_CHUNK_LIMIT,
+                reasoning_chunk_limit + content_chunk_limit + 1024,
+            ),
+        )
+        stream_seconds_limit = STREAM_TOTAL_SECONDS_LIMIT
+        try:
+            request_timeout = float(active_client._request_timeout(stream=True))
+        except (AttributeError, TypeError, ValueError):
+            request_timeout = float(
+                getattr(getattr(active_client, "star_config", None), "timeout_seconds", STREAM_TOTAL_SECONDS_LIMIT)
+                or STREAM_TOTAL_SECONDS_LIMIT
+            )
+        if request_timeout > STREAM_TOTAL_SECONDS_LIMIT:
+            stream_seconds_limit = min(
+                STREAM_TOTAL_SECONDS_HARD_LIMIT,
+                max(STREAM_TOTAL_SECONDS_LIMIT, request_timeout - 5.0),
+            )
+        stream_iter = active_client.chat_completions_stream(
             messages=messages,
             tools=tools,
             model=model,
@@ -7041,8 +7983,8 @@ class ProjectLingEngine:
             choice = ((chunk.get("choices") or [{}])[0] or {})
             delta = choice.get("delta") or {}
             total_chunk_count += 1
-            if total_chunk_count > STREAM_TOTAL_CHUNK_LIMIT:
-                stream_limit_reason = f"stream exceeded {STREAM_TOTAL_CHUNK_LIMIT} chunks"
+            if total_chunk_count > total_chunk_limit:
+                stream_limit_reason = f"stream exceeded {total_chunk_limit} chunks"
                 stream_limit_kind = "stream_limit"
                 if on_stream_event is not None:
                     on_stream_event(
@@ -7057,7 +7999,7 @@ class ProjectLingEngine:
                 break
 
             reasoning_delta = str(delta.get("reasoning_content") or "")
-            if reasoning_delta:
+            if reasoning_delta and not reasoning_folded:
                 candidate_reasoning, reasoning_emit = _normalize_stream_text_frame(
                     "".join(reasoning_parts),
                     reasoning_delta,
@@ -7065,42 +8007,42 @@ class ProjectLingEngine:
                 if reasoning_emit:
                     reasoning_chunk_count += 1
                     reasoning_limit = (
-                        STREAM_REASONING_POST_CONTENT_CHUNK_LIMIT
+                        reasoning_post_content_chunk_limit
                         if content_parts
-                        else STREAM_REASONING_CHUNK_LIMIT
+                        else reasoning_chunk_limit
                     )
                     if reasoning_chunk_count > reasoning_limit:
-                        stream_limit_reason = f"reasoning exceeded {reasoning_limit} chunks"
-                        stream_limit_kind = "stream_limit"
+                        reasoning_folded = True
+                        reasoning_fold_reason = f"reasoning exceeded {reasoning_limit} chunks"
                         if on_stream_event is not None:
                             on_stream_event(
                                 "stream_limit",
                                 {
                                     "kind": "thinking",
-                                    "reason": stream_limit_reason,
-                                    "message": "思考内容分片已达到上限，已提前收束。",
-                                    "soft": False,
+                                    "reason": reasoning_fold_reason,
+                                    "message": "思考内容较长，已折叠后续思考并继续等待最终回答。",
+                                    "soft": True,
                                 },
                             )
-                        break
-                    reasoning_limit = STREAM_REASONING_POST_CONTENT_CHAR_LIMIT if content_parts else STREAM_REASONING_CHAR_LIMIT
-                    if len(candidate_reasoning) > reasoning_limit:
-                        stream_limit_reason = f"reasoning exceeded {reasoning_limit} chars"
-                        stream_limit_kind = "stream_limit"
-                        if on_stream_event is not None:
-                            on_stream_event(
-                                "stream_limit",
-                                {
-                                    "kind": "thinking",
-                                    "reason": stream_limit_reason,
-                                    "message": "思考内容长度已达到上限，已提前收束。",
-                                    "soft": False,
-                                },
-                            )
-                        break
-                    reasoning_parts.append(reasoning_emit)
-                    if on_delta is not None:
-                        on_delta("reasoning", reasoning_emit)
+                    else:
+                        reasoning_limit = reasoning_post_content_char_limit if content_parts else reasoning_char_limit
+                        if len(candidate_reasoning) > reasoning_limit:
+                            reasoning_folded = True
+                            reasoning_fold_reason = f"reasoning exceeded {reasoning_limit} chars"
+                            if on_stream_event is not None:
+                                on_stream_event(
+                                    "stream_limit",
+                                    {
+                                        "kind": "thinking",
+                                        "reason": reasoning_fold_reason,
+                                        "message": "思考内容较长，已折叠后续思考并继续等待最终回答。",
+                                        "soft": True,
+                                    },
+                                )
+                        else:
+                            reasoning_parts.append(reasoning_emit)
+                            if on_delta is not None:
+                                on_delta("reasoning", reasoning_emit)
 
             content_delta = str(delta.get("content") or "")
             if content_delta:
@@ -7110,8 +8052,8 @@ class ProjectLingEngine:
                 )
                 if content_emit:
                     content_chunk_count += 1
-                    if content_chunk_count > STREAM_CONTENT_CHUNK_LIMIT:
-                        stream_limit_reason = f"content exceeded {STREAM_CONTENT_CHUNK_LIMIT} chunks"
+                    if content_chunk_count > content_chunk_limit:
+                        stream_limit_reason = f"content exceeded {content_chunk_limit} chunks"
                         stream_limit_kind = "stream_limit"
                         if on_stream_event is not None:
                             on_stream_event(
@@ -7124,8 +8066,14 @@ class ProjectLingEngine:
                                 },
                             )
                         break
-                    if len(candidate_content) > STREAM_CONTENT_CHAR_LIMIT:
-                        stream_limit_reason = f"content exceeded {STREAM_CONTENT_CHAR_LIMIT} chars"
+                    if len(candidate_content) > content_char_limit:
+                        accepted_chars = max(0, content_char_limit - len("".join(content_parts)))
+                        accepted = content_emit[:accepted_chars]
+                        if accepted:
+                            content_parts.append(accepted)
+                            if on_delta is not None:
+                                on_delta("content", accepted)
+                        stream_limit_reason = f"content exceeded {content_char_limit} chars"
                         stream_limit_kind = "stream_limit"
                         if on_stream_event is not None:
                             on_stream_event(
@@ -7173,8 +8121,8 @@ class ProjectLingEngine:
                 finish_reason = str(choice.get("finish_reason"))
                 continue
 
-            if not finish_reason and (time.monotonic() - stream_started_at) > STREAM_TOTAL_SECONDS_LIMIT:
-                stream_limit_reason = f"stream exceeded {STREAM_TOTAL_SECONDS_LIMIT:g}s"
+            if not finish_reason and (time.monotonic() - stream_started_at) > stream_seconds_limit:
+                stream_limit_reason = f"stream exceeded {stream_seconds_limit:g}s"
                 stream_limit_kind = "stream_limit"
                 if on_stream_event is not None:
                     on_stream_event(
@@ -7214,6 +8162,19 @@ class ProjectLingEngine:
         if usage is not None:
             response["usage"] = usage
         response["_projectling_streamed"] = True
+        response["_projectling_stream_limits"] = {
+            "token_budget": token_budget,
+            "content_chars": content_char_limit,
+            "reasoning_chars": reasoning_char_limit,
+            "reasoning_post_content_chars": reasoning_post_content_char_limit,
+            "content_chunks": content_chunk_limit,
+            "reasoning_chunks": reasoning_chunk_limit,
+            "total_chunks": total_chunk_limit,
+            "seconds": stream_seconds_limit,
+            "reasoning_folded": reasoning_folded,
+            "reasoning_fold_reason": reasoning_fold_reason,
+            "hard_stop_reason": stream_limit_reason or "",
+        }
         return response
 
     def _compact_context_blob(
@@ -7243,7 +8204,7 @@ class ProjectLingEngine:
             include_compact=True,
         )
         compact_prompt = (
-            "你是 projectling 的 contextmanage 上下文治理层，共用当前 DeepSeek API。"
+            "你是 projectling 的 contextmanage 上下文治理层，使用当前主星 API。"
             "你只负责压缩外置上下文，不参与终端设置菜单，不改变聊天角色。"
             f"你正在维护 {role.name_zh} / {role.name_en} 的{context_label}。"
             f"当前上下文已达到压缩阈值：{context_chars} bytes / 约 {context_tokens} tokens。"
@@ -7275,7 +8236,7 @@ class ProjectLingEngine:
 
         try:
             for _round in range(2):
-                response = self.client.chat_completions(
+                response = self.main_client.chat_completions(
                     messages=messages,
                     tools=registry.schemas(),
                     tool_choice="auto",
@@ -7344,14 +8305,14 @@ class ProjectLingEngine:
             """
         )
         try:
-            response = self.client.chat_completions(
+            response = self.executor_client.chat_completions(
                 messages=[
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": diary_text},
                 ],
                 tools=None,
                 tool_choice="none",
-                model=DEEPSEEK_FAST_MODEL,
+                model=self.config.executor_api.model,
                 temperature=0.1,
                 thinking_enabled=True,
                 max_tokens=1200,
@@ -7500,6 +8461,11 @@ class ProjectLingEngine:
         self._compact_external_context_if_needed(role, persona_bundle=persona_bundle)
         conversation_messages: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
         route = self._select_request_route(user_message, allow_tools=allow_tools, dispatch_mode=mode)
+        if persona_bundle.source == "speaker_handoff":
+            route["request_slot"] = "executor"
+            route["model"] = self._executor_model_for_mode(str(route.get("collab_mode") or self.config.collab_mode))
+            route["thinking_enabled"] = self._executor_thinking_for_mode(str(route.get("collab_mode") or self.config.collab_mode))
+            route["reason"] = f"explicit execution-star speaker uses {route['model']}"
         route["post_plan_tool_scope"] = str(post_plan_tool_scope or "full")
         execution_role: LauncherRole | None = None
         execution_bundle: PersonaBundle | None = None
@@ -7522,6 +8488,8 @@ class ProjectLingEngine:
         tool_context = make_tool_context()
         tool_round_limit = max(0, int(self.config.max_tool_rounds or 0))
         request_model = str(route.get("model") or DEEPSEEK_FAST_MODEL)
+        request_slot = "executor" if str(route.get("request_slot") or "").strip().lower() == "executor" else "main"
+        request_client = self.executor_client if request_slot == "executor" else self.main_client
         strict_short_reply = bool(route.get("strict_short_reply"))
         tools_enabled = bool(route.get("tools_enabled"))
         if route.get("force_stream") is False:
@@ -7537,6 +8505,7 @@ class ProjectLingEngine:
 
         def apply_persona_handoff_result(payload: dict[str, Any]) -> bool:
             nonlocal role, resolved_seed, persona_bundle, tool_context, execution_role, execution_bundle, execution_seed
+            nonlocal request_slot, request_client, request_model, request_thinking_enabled
             tool_name = str(payload.get("tool") or "")
             action_name = str(payload.get("action") or payload.get("speaker_mode") or "").strip().lower()
             if tool_name not in {"persona_link", "persona_handoff", "link"}:
@@ -7550,6 +8519,12 @@ class ProjectLingEngine:
             execution_role = None
             execution_bundle = None
             execution_seed = resolved_seed
+            request_slot = "executor" if target == "liaison" else "main"
+            request_client = self.executor_client if request_slot == "executor" else self.main_client
+            request_model = self._executor_model_for_mode(self.config.collab_mode) if request_slot == "executor" else self._planner_model_for_mode(self.config.collab_mode)
+            request_thinking_enabled = self._executor_thinking_for_mode(self.config.collab_mode) if request_slot == "executor" else self._planner_thinking_for_mode(self.config.collab_mode)
+            route["request_slot"] = request_slot
+            route["model"] = request_model
             self._compact_external_context_if_needed(role, persona_bundle=persona_bundle)
             tool_context = make_tool_context()
             return action_name in {"switch", "handoff", "speaker_handoff", "main", "liaison"} or tool_name == "persona_handoff"
@@ -7663,9 +8638,9 @@ class ProjectLingEngine:
             delivery_message = str(route.get("liaison_delivery_message") or user_message).strip() or user_message
             brief_map = {
                 "send": "发送消息",
-                "contact": "主动联系辅导位",
-                "liaison": "辅导位预审",
-                "mission": "委派辅导位任务",
+                "contact": "主动联系执行星",
+                "liaison": "执行星预审",
+                "mission": "委派执行星任务",
             }
             arguments: dict[str, Any] = {
                 "action": delivery_action,
@@ -7739,8 +8714,11 @@ class ProjectLingEngine:
                 execution_seed = resolved_seed
                 tool_context = make_tool_context()
             request_model = str(route.get("executor_model") or self._executor_model_for_mode(str(route.get("collab_mode") or "")))
+            request_slot = "executor"
+            request_client = self.executor_client
+            route["request_slot"] = request_slot
             request_thinking_enabled = self._executor_thinking_for_mode(str(route.get("collab_mode") or getattr(self.config, "collab_mode", PROJECTLING_COLLAB_MODE_DEFAULT)))
-            request_temperature = 0.0 if bool(route.get("execution_like")) else 0.1
+            request_temperature = None
         else:
             self._maybe_run_liaison_preflight(
                 user_message=user_message,
@@ -7763,7 +8741,7 @@ class ProjectLingEngine:
                         本轮按任务复杂度判定需要先建立计划。
                         复杂度：{route.get('task_complexity')}；计划模式：{route.get('plan_mode')}。
                         Executor 第一轮必须用 update_plan.action=start；mode 必须使用上面的计划模式。
-                        主角色复审后再继续调用完整工具执行。后续每完成一步、遇到阻塞或改变路径，都继续 update_plan，让主角色介入纠偏。
+                        主星复审后再继续调用完整工具执行。后续仅在进度真实变化、遇到阻塞或改变路径时 update_plan；普通进度不会重复召回主星，结构性变化、阻塞和全计划完成会触发复审。
                         当前 cwd：{current_cwd}
                         """
                     ),
@@ -7808,9 +8786,17 @@ class ProjectLingEngine:
             if not order_ok:
                 raise DeepSeekAPIError(f"本地 tool_calls 消息链非法：{order_error}")
             tool_schemas = self._tool_schemas_for_request(scope=tool_scope) if tools_enabled else None
-            stream_this_round = bool(stream and not tools_enabled)
+            client_stream_enabled = bool(
+                getattr(
+                    getattr(request_client, "star_config", None),
+                    "enable_sse",
+                    self.config.executor_api.enable_sse if request_slot == "executor" else self.config.main_api.enable_sse,
+                )
+            )
+            stream_this_round = bool(stream and client_stream_enabled and not tools_enabled)
             if stream_this_round:
                 response = self._stream_chat_completions(
+                    client=request_client,
                     messages=messages,
                     tools=tool_schemas,
                     on_delta=on_stream_delta,
@@ -7821,7 +8807,7 @@ class ProjectLingEngine:
                     max_tokens=request_max_tokens,
                 )
             else:
-                response = self.client.chat_completions(
+                response = request_client.chat_completions(
                     messages=messages,
                     tools=tool_schemas,
                     model=request_model,
@@ -7896,13 +8882,13 @@ class ProjectLingEngine:
                                 f"""
                                 上一轮没有调用工具，但本轮复杂度要求先建立计划。
                                 立刻调用 update_plan.action=start，mode={route.get('plan_mode') or 'todo'}。
-                                计划完成并经过主角色复审后，再继续执行任务。
+                                计划完成并经过主星复审后，再继续执行任务。
                                 """
                             ),
                         }
                     )
                     continue
-                assistant_message["content"] = "本轮任务需要先建立 update_plan，但模型没有调用计划工具，已中止以避免跳过主角色复审。"
+                assistant_message["content"] = "本轮任务需要先建立 update_plan，但模型没有调用计划工具，已中止以避免跳过主星复审。"
                 break
             if has_tool_calls and tools_enabled:
                 if tool_round_limit > 0 and round_index > tool_round_limit:
@@ -7938,10 +8924,12 @@ class ProjectLingEngine:
                     if apply_persona_handoff_result(parsed_result):
                         tools_enabled = False
                         tool_scope = "none"
+                    result_tool = str(parsed_result.get("tool") or "").strip()
+                    result_status = str(parsed_result.get("status") or "").strip().lower()
+                    result_action = str(parsed_result.get("action") or "").strip().lower()
+                    if result_tool == "link" and result_status == "ok" and result_action in {"done", "blocked"}:
+                        route["xlink_closed"] = result_action
                     if bool(route.get("plan_required")) and tools_enabled:
-                        result_tool = str(parsed_result.get("tool") or "").strip()
-                        result_status = str(parsed_result.get("status") or "").strip().lower()
-                        result_action = str(parsed_result.get("action") or "").strip().lower()
                         if result_tool == "update_plan" and result_status == "ok" and result_action == "start":
                             route["update_plan_started"] = True
                             tool_scope = str(post_plan_tool_scope or "full")
@@ -7956,6 +8944,9 @@ class ProjectLingEngine:
                         on_stream_event=on_stream_event,
                     ):
                         tools_enabled = bool(route.get("tools_enabled"))
+                if str(route.get("xlink_closed") or "") in {"done", "blocked"}:
+                    tools_enabled = False
+                    tool_scope = "none"
                 current_budget_state = load_context_budget(self.config)
                 try:
                     current_budget_percent = int(current_budget_state.get("percent") or 100)
@@ -7991,23 +8982,34 @@ class ProjectLingEngine:
                 if isinstance(trace, dict)
             )
             if not has_done:
+                auto_action, auto_reasons = self._auto_link_outcome(final_tool_traces, route)
+                auto_blocked = auto_action == "blocked"
                 final_tool_traces.append(
                     {
-                        "id": f"auto-link-done-{int(time.time() * 1000)}",
+                        "id": f"auto-link-{auto_action}-{int(time.time() * 1000)}",
                         "name": "link",
-                        "arguments": json.dumps({"action": "done", "target": "planner", "auto": True}, ensure_ascii=False),
+                        "arguments": json.dumps({"action": auto_action, "target": "planner", "auto": True}, ensure_ascii=False),
                         "result": {
                             "status": "ok",
                             "tool": "link",
-                            "action": "done",
+                            "action": auto_action,
                             "target": "planner",
                             "main_role": f"{role.name_zh} / {role.name_en}",
                             "main_name": f"{role.name_zh} / {role.name_en}",
                             "liaison_name": persona_bundle.liaison_label_or_empty,
                             "context_percent": route.get("planner_context_percent") or load_context_budget(self.config).get("percent"),
-                            "message": "Executor 本轮已结束，运行时自动生成 done 回报。",
-                            "brief": "Executor done",
-                            "steps": ["完成模型回复", "持久化共享上下文", "等待下一轮指令"],
+                            "message": (
+                                "Executor 本轮已结束，但仍有未完成计划或未解决失败；运行时自动生成 blocked 回报。"
+                                if auto_blocked
+                                else "Executor 本轮已结束，运行时根据完成态自动生成 done 回报。"
+                            ),
+                            "brief": f"Executor {auto_action}",
+                            "steps": (
+                                ["保留失败事实", "交回主星判断", "等待修复或下一轮指令"]
+                                if auto_blocked
+                                else ["完成模型回复", "持久化共享上下文", "等待下一轮指令"]
+                            ),
+                            "reasons": auto_reasons,
                             "auto_generated": True,
                             "actor_kind": "executor" if execution_role is not None else "",
                             "actor_label": "执行星" if execution_role is not None else "",
@@ -8076,13 +9078,13 @@ def _build_turn_stamp(*, role: LauncherRole | None = None, bundle: PersonaBundle
         if bundle.source == "speaker_handoff":
             stamp.append(f"当前说话者：{bundle.main.name_zh} / {bundle.main.name_en}")
             if bundle.liaison is not None:
-                stamp.append(f"联动主角色：{bundle.liaison.name_zh} / {bundle.liaison.name_en}")
+                stamp.append(f"联动主星：{bundle.liaison.name_zh} / {bundle.liaison.name_en}")
             return stamp
-        stamp.append(f"主角色：{bundle.main.name_zh} / {bundle.main.name_en}")
+        stamp.append(f"主星：{bundle.main.name_zh} / {bundle.main.name_en}")
         if bundle.liaison is not None:
-            stamp.append(f"辅导位：{bundle.liaison.name_zh} / {bundle.liaison.name_en}")
+            stamp.append(f"执行星：{bundle.liaison.name_zh} / {bundle.liaison.name_en}")
         else:
-            stamp.append("辅导位：未配置")
+            stamp.append("执行星：未配置")
     return stamp
 
 

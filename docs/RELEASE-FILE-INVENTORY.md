@@ -38,6 +38,7 @@ Termux：
 - 默认配置：`config/roster.json`、`config/persona_links.json`、`config/example/`
 - 默认上下文：`context/prompts.json`
 - 诊断：`aidebug/aidebug.cmd`、`aidebug/aidebug.ps1`、`aidebug/bin/aidebug`、`aidebug/runner/`
+- 离线验证：`tests/` 与 `release/app-files.txt`，保证打包后的 selftest 不会因 smoke 缺失而假绿
 - Launcher 源码：`windows-launcher/Program.cs`、`windows-launcher/ProjectLingLauncher.csproj`
 
 ## 明确排除
@@ -51,4 +52,3 @@ Termux：
 - `.git`、开发网页、历史删除项、桌面草稿和未知文件
 
 每个版本都包含逐文件 `SHA256SUMS.txt`。ZIP 的 SHA256 记录在发行根目录 `release-manifest.json`。
-

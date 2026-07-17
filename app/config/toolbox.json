@@ -83,7 +83,7 @@
     "model_mode": {
       "expanded": true,
       "summary": "Inspect or change ProjectLing collaboration mode",
-      "detail": "Inspect or change ProjectLing collaboration mode. rapid uses V4 flash without thinking, standard uses a thinking planner plus non-thinking executor, and precise uses V4 pro with thinking on both sides. Changes are persisted for following turns.",
+      "detail": "Inspect or change ProjectLing collaboration mode. The configured main/executor providers and models stay fixed: rapid lowers reasoning overhead, standard follows each star parameter preset, and precise enables reasoning on both sides. Changes are persisted for following turns.",
       "pinned": false
     },
     "persona_link": {

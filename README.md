@@ -38,7 +38,7 @@ bash Termux/run.sh
 
 ## 交互入口
 
-- `/settings`：统一设置中心，包含 Provider、Key、模型、Gemini 参数、WebSearch 和连通测试。
+- `/settings`：先选择主星或执行星，再分别配置 GPT/Codex、Gemini、Grok 或 DeepSeek 的 Key、地址、模型、场景预设、高级参数、WebSearch 和连通测试；两颗星可使用不同 Provider/模型且互不覆盖。
 - `/role`：抽卡、锁定、主星/执行星选择和角色停留时间。
 - `/exit`：保存必要状态并退出。
 
@@ -59,18 +59,17 @@ docs/               发布、模型和参数兼容性文档
 
 ## 模型与参数
 
-项目支持 Gemini OpenAI-compatible 中转和 DeepSeek。模型是否真实可用由上游渠道、账号权限和实时容量决定；ProjectLing 会记录实际请求模型、上游响应模型、耗时和用量，不会把 Flash 成功伪装成 Pro 成功，也不会静默替换主星模型。
+项目支持 GPT/Codex、Gemini、Grok 与 DeepSeek 的 OpenAI-compatible 中转。模型是否真实可用由上游渠道、账号权限和实时容量决定；ProjectLing 会记录实际请求模型、上游响应模型、耗时和用量，不会把一个模型的成功伪装成另一个模型成功，也不会静默替换主星或执行星模型。
 
-Gemini 的 `temperature`、`top_p`、`top_k` 等参数只有在目标模型和中转服务真实支持时才会生效。兼容结论见 `docs/MODEL-COMPATIBILITY.md` 与 `docs/GEMINI-PARAMETER-SUPPORT.md`。
+场景预设用“默认、编程、数据、日常、闲聊、想象力”等选项生成 Provider 支持的参数；GPT 5.6/5.5 推理等级、Gemini 采样参数、Grok 推理参数及多模态内容会按模型能力过滤。兼容结论见 `docs/MODEL-COMPATIBILITY.md` 与 `docs/GEMINI-PARAMETER-SUPPORT.md`。
 
 ## 验证状态
 
-- Windows 原生 selftest：29 项通过，0 项失败；其余为宿主机缺少 bash/zsh 时的预期跳过。
-- 公开发行树 Windows AIDEBUG：100 / 100；完整开发状态 AIDEBUG：99.5 / 100，状态 `ok`。
-- EXE 已嵌入多尺寸横向 Windows 终端图标。
-- 公开发布树经过禁止路径、密钥模式和本机真实密钥字面值三重扫描。
-
-Android 的 `am`、tmux 前台标签页和 `allow-external-apps=true` 仍需在真实 Termux 设备验证；Windows/WSL 结果不能替代 Android 真机证据。
+- 共享 core selftest：55 / 55，100%，0 fail，0 skip。
+- 完整 AIDEBUG full health：67 / 67，100%；真实 Android Termux health：44 / 44，100%。
+- Termux local/full verifier：两档各 6 / 6，包含 tmux、MOTD/Zsh、在线双星工具链、WebSearch 和 runtime-state guard。
+- Windows `.NET 9` win-x64 构建：0 warning，0 error；EXE 已嵌入多尺寸横向 Windows 终端图标。
+- 公开发布树经过禁止路径、密钥模式和本机真实密钥字面值三重扫描；原生 Windows 交互 UI 保留为最终发布人工验收门。
 
 ## 安全边界
 

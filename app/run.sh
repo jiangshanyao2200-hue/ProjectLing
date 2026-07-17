@@ -1,8 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
 set -euo pipefail
 
-ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-AITERMUX_HOME="${AITERMUX_HOME:-$(CDPATH= cd -- "$ROOT_DIR/.." && pwd)}"
+ROOT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+AITERMUX_HOME="${AITERMUX_HOME:-$(CDPATH='' cd -- "$ROOT_DIR/.." && pwd)}"
 if [ -n "${AITERMUX_AIDEBUG_DIR:-}" ]; then
   AIDEBUG_DIR="$AITERMUX_AIDEBUG_DIR"
 elif [ -d "$ROOT_DIR/aidebug" ]; then
@@ -266,7 +266,7 @@ projectling_stop_pid() {
     return 0
   fi
   kill -TERM "$pid" 2>/dev/null || true
-  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  for ((i = 0; i < 15; i++)); do
     if ! kill -0 "$pid" 2>/dev/null; then
       return 0
     fi
@@ -298,6 +298,7 @@ projectling_cleanup_single_instance() {
   fi
 }
 
+# shellcheck disable=SC2329  # Invoked indirectly by the signal traps below.
 projectling_signal_exit() {
   local signal_name rc
   signal_name="${1:-TERM}"

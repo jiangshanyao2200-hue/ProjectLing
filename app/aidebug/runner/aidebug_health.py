@@ -148,6 +148,31 @@ def _is_android_termux_runtime() -> bool:
     )
 
 
+def _termux_boolean_property_enabled(path: Path, key: str) -> bool:
+    """Read a Termux boolean property using java-properties-style last-value wins."""
+    if not path.is_file():
+        return False
+    expected_key = str(key or "").strip().casefold()
+    configured_value: str | None = None
+    try:
+        for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            property_key, property_value = (part.strip().casefold() for part in line.split("=", 1))
+            if property_key == expected_key:
+                configured_value = property_value
+    except OSError:
+        return False
+    return configured_value == "true"
+
+
+def _android_termux_readiness_score(*, is_android_termux: bool, missing: list[str]) -> int:
+    if not is_android_termux:
+        return 85
+    return 100 if not missing else max(25, 100 - len(missing) * 20)
+
+
 def _projectling_release_root() -> Path:
     if PROJECTLING_DIR.name == "app" and (PROJECTLING_DIR.parent / "Termux").is_dir():
         return PROJECTLING_DIR.parent
@@ -1404,6 +1429,66 @@ def _project_relative_label(path: Path) -> str:
         return path.name or str(path)
 
 
+@functools.lru_cache(maxsize=16)
+def _cached_file_sha256(path_text: str, size: int, mtime_ns: int) -> str:
+    del size, mtime_ns
+    digest = hashlib.sha256()
+    with Path(path_text).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest().lower()
+
+
+def _file_sha256(path: Path) -> str:
+    stat = path.stat()
+    return _cached_file_sha256(str(path.resolve()), int(stat.st_size), int(stat.st_mtime_ns))
+
+
+def _launcher_manifest_pair_matches(launcher_exe: Path, launcher_source: Path) -> bool:
+    try:
+        common_root = Path(os.path.commonpath((str(launcher_exe.resolve()), str(launcher_source.resolve()))))
+    except (OSError, ValueError):
+        common_root = PROJECTLING_DIR
+    roots: list[Path] = []
+    for root in (common_root, PROJECTLING_DIR, PROJECTLING_DIR.parent):
+        if root not in roots:
+            roots.append(root)
+    for root in roots:
+        manifest = root / "SHA256SUMS.txt"
+        if not manifest.is_file():
+            continue
+        try:
+            exe_relative = launcher_exe.resolve().relative_to(root.resolve()).as_posix()
+            source_relative = launcher_source.resolve().relative_to(root.resolve()).as_posix()
+            expected: dict[str, str] = {}
+            for raw_line in manifest.read_text(encoding="utf-8", errors="replace").splitlines():
+                parts = raw_line.strip().split(None, 1)
+                if len(parts) != 2 or not re.fullmatch(r"[0-9A-Fa-f]{64}", parts[0]):
+                    continue
+                expected[parts[1].lstrip("*").replace("\\", "/")] = parts[0].lower()
+            if (
+                expected.get(exe_relative) == _file_sha256(launcher_exe)
+                and expected.get(source_relative) == _file_sha256(launcher_source)
+            ):
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def _launcher_pair_freshness(launcher_exe: Path, launcher_source: Path) -> tuple[bool, str]:
+    if not launcher_exe.is_file() or not launcher_source.is_file():
+        return False, "missing"
+    try:
+        if launcher_exe.stat().st_mtime >= launcher_source.stat().st_mtime:
+            return True, "mtime"
+        if _launcher_manifest_pair_matches(launcher_exe, launcher_source):
+            return True, "manifest"
+    except OSError:
+        return False, "read-error"
+    return False, "exe<src"
+
+
 def _launcher_freshness_detail(launcher_exe: Path, launcher_source: Path) -> str:
     exe_label = launcher_exe.name
     source_label = _project_relative_label(launcher_source)
@@ -1414,15 +1499,16 @@ def _launcher_freshness_detail(launcher_exe: Path, launcher_source: Path) -> str
         missing.append("src")
     if missing:
         return f"exe={exe_label} src={source_label} missing={','.join(missing)}"
-    if launcher_exe.stat().st_mtime < launcher_source.stat().st_mtime:
+    fresh, mode = _launcher_pair_freshness(launcher_exe, launcher_source)
+    if not fresh:
         return (
-            f"exe={exe_label} src={source_label} rel=exe<src "
+            f"exe={exe_label} src={source_label} rel={mode} "
             f"exe_m={int(launcher_exe.stat().st_mtime)} src_m={int(launcher_source.stat().st_mtime)}"
         )
     return (
         f"exe={exe_label} "
         f"src={source_label} "
-        "rel=exe>=src"
+        f"rel={mode}"
     )
 
 
@@ -2793,7 +2879,7 @@ def _windows_native_motd_checks(launcher_source: Path) -> list[tuple[str, bool, 
         and '"API 与模型"' in core_text
         and '_print_setting_pair("当前"' in core_text
         and '_print_setting_pair("主星"' in core_text
-        and '_print_setting_pair("执行"' in core_text
+        and '_print_setting_pair("执行星"' in core_text
     )
     checks.append(("core_settings_provider_summary", settings_root_summary, str(PROJECTLING_DIR / "core.py"), 6))
     settings_gemini_tab = (
@@ -2839,11 +2925,7 @@ def _check_windows_native_adapter() -> dict[str, Any]:
     checks.append(("aidebug_runner", (AIDEBUG_CODE_DIR / "runner" / "aidebug_health.py").exists(), str(AIDEBUG_CODE_DIR / "runner" / "aidebug_health.py"), 10))
     checks.append(("windows_launcher_source", launcher_source.exists(), str(launcher_source), 10))
     checks.append(("windows_launcher_exe", launcher_exe.exists(), str(launcher_exe), 10))
-    launcher_fresh = bool(
-        launcher_source.exists()
-        and launcher_exe.exists()
-        and launcher_exe.stat().st_mtime >= launcher_source.stat().st_mtime
-    )
+    launcher_fresh, _launcher_fresh_mode = _launcher_pair_freshness(launcher_exe, launcher_source)
     checks.append(("windows_launcher_fresh", launcher_fresh, _launcher_freshness_detail(launcher_exe, launcher_source), 10))
     if PROJECTLING_DIR.name.lower() != "projectling":
         checks.append(("legacy_lowercase_projectling_absent", not desktop_lowercase.exists(), str(desktop_lowercase), 10))
@@ -2934,6 +3016,45 @@ def _check_windows_native_adapter() -> dict[str, Any]:
     return item("windows_native_adapter", score, status_from_score(score), evidence, next_action)
 
 
+def _windows_launcher_source_surface_markers(launcher_text: str) -> dict[str, bool]:
+    return {
+        "command_probe": "--aidebug-command-surface" in launcher_text,
+        "provider_status": "ReadApiStatus" in launcher_text and "ReadApiProvider" in launcher_text,
+        "models_command": "/models" in launcher_text and "list-models" in launcher_text,
+        "api_test_command": "/api-test" in launcher_text and "api-test" in launcher_text,
+        "startup_models_forward": (
+            "TryRunStartupCommand" in launcher_text
+            and 'case "/models":' in launcher_text
+            and '"list-models"' in launcher_text
+            and "Concat(passthrough)" in launcher_text
+        ),
+        "startup_api_test_forward": (
+            "TryRunStartupCommand" in launcher_text
+            and 'case "/api-test":' in launcher_text
+            and '"api-test"' in launcher_text
+            and "Concat(passthrough)" in launcher_text
+        ),
+        "help_copy": (
+            "BuildWindowsHelpLines" in launcher_text
+            and "BuildStartupSlashMenuLines" in launcher_text
+            and 'new SlashMenuItem("/settings", "设置", "主星 API / 执行星 API / 搜索 / 系统")' in launcher_text
+            and '"PROJECTLING_MAIN_PROVIDER"' in launcher_text
+            and '"PROJECTLING_EXECUTOR_PROVIDER"' in launcher_text
+            and '"gpt" => "GPT/Codex"' in launcher_text
+            and '"grok" => "Grok"' in launcher_text
+            and 'new SlashMenuItem("/role", "角色", "抽卡 / 锁定 / 主星 / 执行星")' in launcher_text
+            and 'new SlashMenuItem("/exit", "退出", "关闭窗口")' in launcher_text
+            and 'new SlashMenuItem("/settings deepseek"' not in launcher_text
+            and 'new SlashMenuItem("/settings gemini"' not in launcher_text
+            and 'new SlashMenuItem("/settings websearch"' not in launcher_text
+            and 'new SlashMenuItem("/models"' not in launcher_text
+            and 'new SlashMenuItem("/api-test"' not in launcher_text
+            and 'new SlashMenuItem("/aidebug"' not in launcher_text
+            and 'new SlashMenuItem("/help"' not in launcher_text
+        ),
+    }
+
+
 def check_windows_launcher_gemini_surface() -> dict[str, Any]:
     launcher_source = PROJECTLING_DIR / "windows-launcher" / "Program.cs"
     launcher_exe = _launcher_exe_path()
@@ -3000,44 +3121,8 @@ def check_windows_launcher_gemini_surface() -> dict[str, Any]:
         )
 
     launcher_text = _read_text_optional(launcher_source)
-    markers = {
-        "command_probe": "--aidebug-command-surface" in launcher_text,
-        "provider_status": "ReadApiStatus" in launcher_text and "ReadApiProvider" in launcher_text,
-        "models_command": "/models" in launcher_text and "list-models" in launcher_text,
-        "api_test_command": "/api-test" in launcher_text and "api-test" in launcher_text,
-        "startup_models_forward": (
-            "TryRunStartupCommand" in launcher_text
-            and 'case "/models":' in launcher_text
-            and '"list-models"' in launcher_text
-            and "Concat(passthrough)" in launcher_text
-        ),
-        "startup_api_test_forward": (
-            "TryRunStartupCommand" in launcher_text
-            and 'case "/api-test":' in launcher_text
-            and '"api-test"' in launcher_text
-            and "Concat(passthrough)" in launcher_text
-        ),
-        "help_copy": (
-            "BuildWindowsHelpLines" in launcher_text
-            and "Gemini" in launcher_text
-            and "DeepSeek" in launcher_text
-            and "WebSearch" in launcher_text
-            and "/role" in launcher_text
-            and "/exit" in launcher_text
-            and "new SlashMenuItem(\"/settings deepseek\"" not in launcher_text
-            and "new SlashMenuItem(\"/settings gemini\"" not in launcher_text
-            and "new SlashMenuItem(\"/settings websearch\"" not in launcher_text
-            and "new SlashMenuItem(\"/models\"" not in launcher_text
-            and "new SlashMenuItem(\"/api-test\"" not in launcher_text
-            and "new SlashMenuItem(\"/aidebug\"" not in launcher_text
-            and "new SlashMenuItem(\"/help\"" not in launcher_text
-        ),
-    }
-    fresh = bool(
-        launcher_source.exists()
-        and launcher_exe.exists()
-        and launcher_exe.stat().st_mtime >= launcher_source.stat().st_mtime
-    )
+    markers = _windows_launcher_source_surface_markers(launcher_text)
+    fresh, fresh_mode = _launcher_pair_freshness(launcher_exe, launcher_source)
     provider_ok = active_provider == "gemini"
     ok = launcher_source.exists() and launcher_exe.exists() and fresh and provider_ok and all(markers.values())
     failures = [name for name, value in markers.items() if not value]
@@ -3051,7 +3136,7 @@ def check_windows_launcher_gemini_surface() -> dict[str, Any]:
         f"active_provider={active_provider}",
         f"launcher_source={int(launcher_source.exists())}",
         f"launcher_exe={int(launcher_exe.exists())}",
-        f"fresh={int(fresh)}",
+        f"fresh={int(fresh)} mode={fresh_mode}",
         "markers=" + _compact_marker_summary(markers),
         "secret_redaction=runtime_checked_on_windows",
     ]
@@ -3265,11 +3350,7 @@ def check_windows_wsl_adapter() -> dict[str, Any]:
     launcher_exe = _launcher_exe_path()
     checks.append(("windows_launcher_source", launcher_source.exists(), str(launcher_source), 5))
     checks.append(("windows_launcher_exe", launcher_exe.exists(), str(launcher_exe), 10))
-    launcher_fresh = bool(
-        launcher_source.exists()
-        and launcher_exe.exists()
-        and launcher_exe.stat().st_mtime >= launcher_source.stat().st_mtime
-    )
+    launcher_fresh, _launcher_fresh_mode = _launcher_pair_freshness(launcher_exe, launcher_source)
     checks.append(("windows_launcher_fresh", launcher_fresh, _launcher_freshness_detail(launcher_exe, launcher_source), 10))
     if PROJECTLING_DIR.name.lower() != "projectling":
         legacy_lowercase = PROJECTLING_DIR.parent / "projectling"
@@ -3371,7 +3452,8 @@ def check_termux_runtime_contract() -> dict[str, Any]:
 
 
 def check_termux_install_contract() -> dict[str, Any]:
-    installer = _projectling_release_root() / "Termux" / "install.sh"
+    release_root = _projectling_release_root()
+    installer = release_root / "Termux" / "install.sh"
     if not installer.is_file():
         return item(
             "termux_install_contract",
@@ -3380,12 +3462,38 @@ def check_termux_install_contract() -> dict[str, Any]:
             [f"installer_missing={installer}"],
             "恢复 Termux/install.sh。",
         )
+    installer_text = _read_text_optional(installer)
+    source_template = release_root / "release" / "termux" / "install.sh"
+    template_sync = not source_template.is_file() or _read_text_optional(source_template) == installer_text
+    bridge_checks = {
+        "managed_begin": "# >>> PROJECTLING ZSH BRIDGE >>>" in installer_text,
+        "managed_end": "# <<< PROJECTLING ZSH BRIDGE <<<" in installer_text,
+        "legacy_termux_migration": "# PROJECTLING_TERMUX_ENTRY" in installer_text,
+        "legacy_release_migration": "# PROJECTLING_RELEASE_ENTRY" in installer_text,
+        "path_refresh": 'cmp -s "$new_path" "$zshrc_path"' in installer_text,
+        "settings_migration": "--compat-migrate-only" in installer_text,
+        "projectling_dir_export": "export PROJECTLING_DIR=%q" in installer_text,
+        "template_sync": template_sync,
+    }
+    missing_bridge_checks = [name for name, ok in bridge_checks.items() if not ok]
+    smoke_script = release_root / "tests" / "termux-install-bridge-smoke.sh"
+    smoke_rc: int | None = None
+    smoke_last = "packaged-release"
     try:
         completed = run_cmd(
             ["bash", str(installer), "--check", "--no-zshrc"],
             cwd=_projectling_release_root(),
             timeout=90,
         )
+        if smoke_script.is_file():
+            smoke = run_cmd(
+                ["bash", str(smoke_script)],
+                cwd=release_root,
+                timeout=120,
+            )
+            smoke_rc = int(smoke.returncode)
+            smoke_lines = [line.strip() for line in (smoke.stdout or "").splitlines() if line.strip()]
+            smoke_last = smoke_lines[-1][:160] if smoke_lines else "-"
     except Exception as exc:
         return item(
             "termux_install_contract",
@@ -3395,19 +3503,23 @@ def check_termux_install_contract() -> dict[str, Any]:
             "修复 Termux 安装检查。",
         )
     output_lines = [line.strip() for line in (completed.stdout or "").splitlines() if line.strip()]
-    score = 100 if completed.returncode == 0 else 25
+    smoke_ok = smoke_rc in {None, 0}
+    score = 100 if completed.returncode == 0 and not missing_bridge_checks and smoke_ok else 25
     evidence = [
         f"rc={completed.returncode}",
         f"lines={len(output_lines)}",
         f"last={output_lines[-1][:160] if output_lines else '-'}",
         f"stderr_chars={len(completed.stderr or '')}",
+        "bridge=" + ",".join(f"{name}:{int(ok)}" for name, ok in bridge_checks.items()),
+        f"bridge_missing={','.join(missing_bridge_checks) or '-'}",
+        f"bridge_smoke_rc={smoke_rc if smoke_rc is not None else 'packaged'} last={smoke_last}",
     ]
     return item(
         "termux_install_contract",
         score,
         status_from_score(score),
         evidence,
-        "执行 bash Termux/install.sh --check --no-zshrc 查看失败项。" if score < 85 else "",
+        "修复安装检查、旧 bridge 路径迁移、Settings flat→app 迁移或重复安装幂等性。" if score < 85 else "",
     )
 
 
@@ -3426,6 +3538,20 @@ def check_platform_source_parity() -> dict[str, Any]:
     github_build_text = _read_text_optional(github_build_script)
     publish_text = _read_text_optional(publish_script)
     source_checkout = build_script.is_file()
+    app_manifest = release_root / "release" / "app-files.txt"
+    if not app_manifest.is_file():
+        app_manifest = PROJECTLING_DIR / "release" / "app-files.txt"
+    app_manifest_entries = {
+        line.strip().replace("\\", "/")
+        for line in _read_text_optional(app_manifest).splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    required_shared_sources = {
+        "core.py",
+        "projectling.py",
+        "tooling.py",
+        "tests/release-package-smoke.py",
+    }
     duplicate_core = [
         path.name
         for path in (release_root / "Termux").glob("*.py")
@@ -3440,7 +3566,9 @@ def check_platform_source_parity() -> dict[str, Any]:
         ),
         "no_termux_core_fork": not duplicate_core,
         "release_single_source": (
-            all(marker in build_text for marker in ("'core.py'", "'projectling.py'", "'tooling.py'", "Copy-App"))
+            required_shared_sources.issubset(app_manifest_entries)
+            and all(marker in build_text for marker in ("release\\app-files.txt", "$AppManifest", "Copy-App"))
+            and all(marker in github_build_text for marker in ("release\\app-files.txt", "$PublicAppManifest"))
             if source_checkout
             else all((PROJECTLING_DIR / name).is_file() for name in ("core.py", "projectling.py", "tooling.py"))
         ),
@@ -3453,7 +3581,7 @@ def check_platform_source_parity() -> dict[str, Any]:
             else True
         ),
         "repository_targets": (
-            all(marker in publish_text for marker in ("Name = 'ProjectLing-Private'", "Name = 'PROJECTling'"))
+            all(marker in publish_text for marker in ("Name = 'ProjectLing-Private'", "Name = 'ProjectLing'"))
             if source_checkout
             else True
         ),
@@ -3464,6 +3592,7 @@ def check_platform_source_parity() -> dict[str, Any]:
         "checks=" + ",".join(f"{name}:{int(ok)}" for name, ok in checks.items()),
         f"windows_launcher={launcher}",
         f"termux_run={termux_run}",
+        f"app_manifest={len(app_manifest_entries)} required={len(required_shared_sources.intersection(app_manifest_entries))}/{len(required_shared_sources)}",
         f"duplicate_core={','.join(duplicate_core) or '-'}",
         f"layout={'source-checkout' if source_checkout else 'packaged-release'}",
     ]
@@ -3736,12 +3865,20 @@ def check_api_provider_config() -> dict[str, Any]:
     planner = str(data.get("planner_model") or "").strip()
     executor = str(data.get("executor_model") or "").strip()
     base_url = str(data.get("base_url") or "").strip()
+    main_api = data.get("main_api") if isinstance(data.get("main_api"), dict) else {}
+    executor_api = data.get("executor_api") if isinstance(data.get("executor_api"), dict) else {}
     checks: dict[str, bool] = {
-        "provider_valid": provider in {"deepseek", "gemini"},
+        "provider_valid": provider in {"gpt", "gemini", "grok", "deepseek"},
         "active_key": bool(data.get("api_key_configured")),
         "base_url": base_url.startswith("http"),
         "planner_model": bool(planner),
         "executor_model": bool(executor),
+        "main_provider_valid": str(main_api.get("provider") or "") in {"gpt", "gemini", "grok", "deepseek"},
+        "executor_provider_valid": str(executor_api.get("provider") or "") in {"gpt", "gemini", "grok", "deepseek"},
+        "main_key": bool(main_api.get("api_key_configured")),
+        "executor_key": bool(executor_api.get("api_key_configured")),
+        "main_profile": str(main_api.get("parameter_profile") or "") in {"default", "coding", "data", "daily", "chat", "creative"},
+        "executor_profile": str(executor_api.get("parameter_profile") or "") in {"default", "coding", "data", "daily", "chat", "creative"},
     }
     if provider == "gemini":
         checks.update(
@@ -3789,7 +3926,7 @@ def check_api_provider_config() -> dict[str, Any]:
         checks["compact_help_api_test"] = (
             completed.returncode == 0
             and "/api-test" in compact_help
-            and "测试主星/辅星连通" in compact_help
+            and ("双星连通" in compact_help or "跨 Provider" in compact_help)
         )
     except Exception:
         checks["compact_help_models"] = False
@@ -3840,19 +3977,33 @@ def check_api_provider_config() -> dict[str, Any]:
             and "/apitest\\ *" in zsh_text
             and "projectling_run_on_tty api-test" in zsh_text
         )
+        checks["zsh_multi_provider_aliases"] = all(token in zsh_text for token in ("/gpt|/codex", "/gemini", "/grok|/xai", "/deepseek"))
+        checks["zsh_star_settings_routes"] = all(
+            token in zsh_text
+            for token in (
+                "main|main_api|main-api|planner",
+                "executor|executor_api|executor-api|support",
+                "gpt|codex|openai",
+                "gemini|grok|xai",
+                "} always {",
+            )
+        )
     except Exception:
         checks["zsh_models_alias"] = False
         checks["zsh_api_test_alias"] = False
+        checks["zsh_multi_provider_aliases"] = False
+        checks["zsh_star_settings_routes"] = False
     evidence = [
         f"provider={provider}",
         f"base_url={base_url}",
         f"planner={planner}",
         f"executor={executor}",
-        f"keys=gemini:{_compact_bool_flag(data.get('gemini_api_key_configured'))} deepseek:{_compact_bool_flag(data.get('deepseek_api_key_configured'))}",
+        f"stars=main:{main_api.get('provider')}/{_compact_bool_flag(main_api.get('api_key_configured'))} exec:{executor_api.get('provider')}/{_compact_bool_flag(executor_api.get('api_key_configured'))}",
+        f"keys=gpt:{_compact_bool_flag(data.get('gpt_api_key_configured'))} gemini:{_compact_bool_flag(data.get('gemini_api_key_configured'))} grok:{_compact_bool_flag(data.get('grok_api_key_configured'))} ds:{_compact_bool_flag(data.get('deepseek_api_key_configured'))}",
         f"cli_help={help_detail}",
         f"help=models:{_compact_bool_flag(checks.get('compact_help_models'))} api:{_compact_bool_flag(checks.get('compact_help_api_test'))}",
         f"help_w={','.join(compact_help_width_evidence)} fail={_compact_list_or_dash(compact_help_width_failures[:4])}",
-        f"zsh_aliases=models:{int(bool(checks.get('zsh_models_alias')))} api_test:{int(bool(checks.get('zsh_api_test_alias')))}",
+        f"zsh_aliases=models:{int(bool(checks.get('zsh_models_alias')))} api:{int(bool(checks.get('zsh_api_test_alias')))} providers:{int(bool(checks.get('zsh_multi_provider_aliases')))} stars:{int(bool(checks.get('zsh_star_settings_routes')))}",
     ]
     api_provider_density_limit = 75
     api_provider_old_labels = (
@@ -3884,6 +4035,30 @@ def check_api_provider_config() -> dict[str, Any]:
         evidence,
         "修复 provider/env/settings/list-models/api-test 接入面。" if failures else "",
     )
+
+
+def _matrix_listing_complete(payload: dict[str, Any], *, entry_count: int, scope: str) -> tuple[bool, str]:
+    listing = payload.get("model_listing") if isinstance(payload.get("model_listing"), dict) else {}
+    if not listing:
+        summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+        legacy_count = int(summary.get("model_count") or 0)
+        return entry_count > 0 and legacy_count == entry_count, "legacy"
+    expected_key = "available_gemini_count" if scope == "gemini" else "available_count"
+    try:
+        available_count = int(listing.get(expected_key))
+        selected_count = int(listing.get("selected_count"))
+        requested_count = int(listing.get("requested_count"))
+    except (TypeError, ValueError):
+        return False, "invalid"
+    complete = (
+        listing.get("scope") == scope
+        and listing.get("complete_snapshot") is True
+        and requested_count == 0
+        and available_count > 0
+        and selected_count == available_count == entry_count
+        and bool(re.fullmatch(r"[0-9a-f]{64}", str(listing.get("available_models_sha256") or "")))
+    )
+    return complete, "snapshot" if complete else "partial"
 
 
 def check_relay_model_compatibility_matrix() -> dict[str, Any]:
@@ -3951,8 +4126,11 @@ def check_relay_model_compatibility_matrix() -> dict[str, Any]:
     combined_text = json.dumps(payload, ensure_ascii=False) + "\n" + markdown
     secret_ok = not _contains_unmasked_secret(combined_text)
     age = int(time.time() - json_path.stat().st_mtime)
+    listing_ok, listing_mode = _matrix_listing_complete(payload, entry_count=len(entries), scope="all")
+    listing = payload.get("model_listing") if isinstance(payload.get("model_listing"), dict) else {}
     checks = {
-        "count_23": len(entries) == 23 and int(summary.get("model_count") or 0) == 23,
+        "listing_complete": listing_ok,
+        "summary_count": int(summary.get("model_count") or 0) == len(entries),
         "unique": len(set(names)) == len(names),
         "probe_coverage": not missing_probe_models,
         "thinking_coverage": not missing_thinking_models,
@@ -3967,7 +4145,7 @@ def check_relay_model_compatibility_matrix() -> dict[str, Any]:
     }
     failures = [name for name, ok in checks.items() if not ok]
     evidence = [
-        f"models={len(entries)} unique={len(set(names))} verdicts={verdict_total}",
+        f"models={len(entries)} listed={listing.get('available_count', len(entries))} mode={listing_mode} unique={len(set(names))} verdicts={verdict_total}",
         f"recommended={summary.get('recommended')} limited={summary.get('usable_limited')} diagnostic={summary.get('diagnostic_only')}",
         f"bad={summary.get('incompatible_or_unavailable')} age={age}",
         f"planner={planner}:{_compact_bool_flag(planner_ok)} executor={executor}:{_compact_bool_flag(executor_ok)}",
@@ -3975,13 +4153,13 @@ def check_relay_model_compatibility_matrix() -> dict[str, Any]:
         f"luna={observation.get('luna_match_count')} compact56={_compact_bool_flag(observation.get('exact_5_6_compact_exposed'))}",
         f"failures={_compact_list_or_dash(failures)}",
     ]
-    score = 100 if not failures else 75 if len(entries) == 23 and secret_ok else 45
+    score = 100 if not failures else 75 if entries and secret_ok else 45
     return item(
         "relay_model_compatibility_matrix",
         score,
         status_from_score(score),
         evidence,
-        "刷新 23 模型矩阵，补齐探针、角色兼容、Luna/5.6 证据或脱敏。" if failures else "",
+        "刷新完整模型列表矩阵，补齐探针、角色兼容、Luna/5.6 证据或脱敏。" if failures else "",
     )
 
 
@@ -4042,9 +4220,11 @@ def check_gemini_parameter_support_matrix() -> dict[str, Any]:
     age = int(time.time() - json_path.stat().st_mtime)
     expected_probe_count = len(entries) * len(expected_parameters)
     classification_total = sum(int(value or 0) for value in classifications.values())
+    listing_ok, listing_mode = _matrix_listing_complete(payload, entry_count=len(entries), scope="gemini")
+    listing = payload.get("model_listing") if isinstance(payload.get("model_listing"), dict) else {}
     checks = {
         "provider": payload.get("provider") == "gemini",
-        "model_count": len(entries) == 21,
+        "listing_complete": listing_ok,
         "unique": len(set(names)) == len(names),
         "parameters": parameters == expected_parameters,
         "probe_coverage": len(probes) == expected_probe_count,
@@ -4060,12 +4240,12 @@ def check_gemini_parameter_support_matrix() -> dict[str, Any]:
     failures = [name for name, ok in checks.items() if not ok]
     accepted = int(classifications.get("accepted_unverified") or 0)
     evidence = [
-        f"models={len(entries)} unique={len(set(names))} probes={len(probes)}/{expected_probe_count}",
+        f"models={len(entries)} listed={listing.get('available_gemini_count', len(entries))} mode={listing_mode} unique={len(set(names))} probes={len(probes)}/{expected_probe_count}",
         f"accepted={accepted} unavailable={classifications.get('model_unavailable', 0)} request_error={classifications.get('request_error', 0)} rejected={classifications.get('rejected', 0)}",
         f"mismatch={_compact_list_or_dash(mismatch)} unknown={_compact_list_or_dash(unknown)} age={age}",
         f"failures={_compact_list_or_dash(failures)}",
     ]
-    score = 100 if not failures else 75 if len(entries) == 21 and len(probes) == expected_probe_count else 45
+    score = 100 if not failures else 75 if entries and len(probes) == expected_probe_count else 45
     return item(
         "gemini_parameter_support_matrix",
         score,
@@ -4086,6 +4266,11 @@ def check_zsh_diagnostic_alias_execution() -> dict[str, Any]:
         "api_test_handler": "api-test)" in zsh_text and "projectling_run_on_tty api-test" in zsh_text,
         "slash_models": "/models\\ *" in zsh_text and "/model-list\\ *" in zsh_text and "/list-models\\ *" in zsh_text,
         "slash_api_test": "/api-test\\ *" in zsh_text and "/apitest\\ *" in zsh_text,
+        "settings_tabs": "/settings\\ *" in zsh_text and "/role)" in zsh_text and "/gemini)" in zsh_text and "/websearch" in zsh_text,
+        "status_surface": "/status\\ *" in zsh_text and "projectling_run_on_tty status" in zsh_text,
+        "reload_update": "projectling_reload()" in zsh_text and "update-projectling" in zsh_text,
+        "private_update_guard": "projectling-private" in zsh_text and "未改写 remote 或工作树" in zsh_text,
+        "runner_override": 'PROJECTLING_RUNNER="${PROJECTLING_RUNNER:-$PROJECTLING_HOME/run.sh}"' in zsh_text,
         "inline_local": '"$local_mode" == "models"' in zsh_text and '"$local_mode" == "api-test"' in zsh_text,
     }
     source_failures = [name for name, ok in source_checks.items() if not ok]
@@ -4138,6 +4323,16 @@ def check_zsh_diagnostic_alias_execution() -> dict[str, Any]:
                 "probe '/list-models'",
                 "probe '/api-test --json --no-stream'",
                 "probe '/apitest'",
+                "probe '/settings api'",
+                "probe '/role'",
+                "probe '/deepseek'",
+                "probe '/gemini'",
+                "probe '/websearch'",
+                "probe '/status --json'",
+                "[[ \"$PROJECTLING_RUNNER\" == \"$PROJECTLING_ZSH_ALIAS_EXPECTED_RUNNER\" ]] || exit 20",
+                "PROJECTLING_EDIT_HISTORY=(keep)",
+                "projectling_reload >/dev/null",
+                "[[ \"${PROJECTLING_EDIT_HISTORY[1]:-}\" == keep ]] || exit 21",
             ]
         )
         completed = subprocess.run(
@@ -4151,6 +4346,8 @@ def check_zsh_diagnostic_alias_execution() -> dict[str, Any]:
             env={
                 **os.environ,
                 "PROJECTLING_HOME": str(sandbox),
+                "PROJECTLING_RUNNER": str(fake_runner),
+                "PROJECTLING_ZSH_ALIAS_EXPECTED_RUNNER": str(fake_runner),
                 "PROJECTLING_ZSH_ALIAS_CAPTURE": str(capture),
             },
             check=False,
@@ -4165,6 +4362,12 @@ def check_zsh_diagnostic_alias_execution() -> dict[str, Any]:
         ["list-models"],
         ["api-test", "--json", "--no-stream"],
         ["api-test"],
+        ["shell-settings", "--tab", "api"],
+        ["shell-settings", "--tab", "role"],
+        ["shell-settings", "--tab", "deepseek"],
+        ["shell-settings", "--tab", "gemini"],
+        ["shell-settings", "--tab", "websearch"],
+        ["status", "--json"],
     ]
     ok = completed.returncode == 0 and rows == expected
     evidence = [
@@ -4205,7 +4408,7 @@ def check_route_alignment() -> dict[str, Any]:
             "strict_short",
             "只回复：OK。不要解释。",
             "strict_short_reply",
-            executor_model,
+            planner_model,
             False,
             False,
         ),
@@ -4221,7 +4424,7 @@ def check_route_alignment() -> dict[str, Any]:
             "casual_chat",
             "你好呀",
             "casual_chat",
-            executor_model,
+            planner_model,
             False,
             False,
         ),
@@ -4269,6 +4472,41 @@ def check_route_alignment() -> dict[str, Any]:
                 f"model={_route_model_label(actual_model, expected_model)} "
                 f"t={_route_thinking_label(actual_thinking)} s={_compact_bool_flag(actual_status)}"
             )
+
+    dualstar_scenarios = [
+        ("star_switch_exec", "切到执行星", "speaker_handoff", "liaison", ""),
+        ("star_switch_main", "切回主星继续", "speaker_handoff", "main", ""),
+        ("star_send", "给执行星发一句：你好", "liaison_delivery", "", "send"),
+        ("star_review", "请执行星审查这个方案的风险", "liaison_delivery", "", "liaison"),
+        ("legacy_switch_exec", "切到辅导位", "speaker_handoff", "liaison", ""),
+        ("legacy_switch_main", "切回主角色继续", "speaker_handoff", "main", ""),
+    ]
+    for label, prompt, expected_category, expected_target, expected_action in dualstar_scenarios:
+        route = engine.preview_route(prompt, allow_tools=True)
+        actual_category = str(route.get("category") or "")
+        actual_target = str(route.get("speaker_handoff_target") or "")
+        actual_action = str(route.get("liaison_delivery_action") or "")
+        if expected_category == "speaker_handoff":
+            ok = (
+                actual_category == expected_category
+                and bool(route.get("speaker_handoff_request"))
+                and actual_target == expected_target
+                and str(route.get("tool_scope") or "") == "persona_link"
+            )
+        else:
+            ok = (
+                actual_category == expected_category
+                and bool(route.get("liaison_delivery_request"))
+                and actual_action == expected_action
+                and str(route.get("tool_scope") or "") == "persona_link"
+            )
+        if not ok:
+            score -= 15
+            route_failures.append(label)
+        evidence.append(
+            f"{label}={'ok' if ok else 'fail'} cat={actual_category or '-'} "
+            f"target={actual_target or '-'} action={actual_action or '-'}"
+        )
     score = max(25, score)
     route_density_limit = 90
     route_density_failures = [
@@ -4297,7 +4535,7 @@ def check_route_alignment() -> dict[str, Any]:
         score,
         status_from_score(score),
         evidence,
-        "修正 projectling 路由决策、普通对话状态显示或短答提示策略。" if score < 85 else "",
+        "修正 ProjectLing 路由决策、主星/执行星新旧称联动、普通对话状态显示或短答提示策略。" if score < 85 else "",
     )
 
 
@@ -4307,32 +4545,35 @@ def check_deepseek_v4_transport() -> dict[str, Any]:
     try:
         config = load_config()
         engine = ProjectLingEngine(config)  # type: ignore[operator]
-        client = DeepSeekClient(config)  # type: ignore[operator]
+        main_client = DeepSeekClient(config, config.main_api)  # type: ignore[operator]
+        executor_client = DeepSeekClient(config, config.executor_api)  # type: ignore[operator]
         provider = str(getattr(config, "api_provider", "deepseek") or "deepseek").lower()
         planner_model = engine._planner_model_for_mode("standard")
         executor_model = engine._executor_model_for_mode("standard")
         precise_model = engine._planner_model_for_mode("precise")
-        think_payload = client._build_payload(
+        planner_thinking = engine._planner_thinking_for_mode("standard")
+        executor_thinking = engine._executor_thinking_for_mode("standard")
+        think_payload = main_client._build_payload(
             messages=[{"role": "user", "content": "ping"}],
             tools=None,
             tool_choice="none",
             temperature=0.2,
             stream=False,
             model=planner_model,
-            thinking_enabled=engine._planner_thinking_for_mode("standard"),
+            thinking_enabled=planner_thinking,
             max_tokens=32,
         )
-        stream_payload = client._build_payload(
+        stream_payload = executor_client._build_payload(
             messages=[{"role": "user", "content": "ping"}],
             tools=None,
             tool_choice="none",
             temperature=0.2,
             stream=True,
             model=executor_model,
-            thinking_enabled=engine._executor_thinking_for_mode("standard"),
+            thinking_enabled=executor_thinking,
             max_tokens=32,
         )
-        stream_tools_payload = client._build_payload(
+        stream_tools_payload = executor_client._build_payload(
             messages=[{"role": "user", "content": "ping"}],
             tools=[
                 {
@@ -4348,7 +4589,7 @@ def check_deepseek_v4_transport() -> dict[str, Any]:
             temperature=0.2,
             stream=True,
             model=executor_model,
-            thinking_enabled=engine._executor_thinking_for_mode("standard"),
+            thinking_enabled=executor_thinking,
             max_tokens=32,
         )
         valid_chain = [
@@ -4396,8 +4637,8 @@ def check_deepseek_v4_transport() -> dict[str, Any]:
                     },
                 }
 
-        engine.client = _FakeStreamClient()  # type: ignore[assignment]
         stream_response = engine._stream_chat_completions(
+            client=_FakeStreamClient(),  # type: ignore[arg-type]
             messages=[{"role": "user", "content": "ping"}],
             tools=stream_tools_payload.get("tools"),
             model=executor_model,
@@ -4416,7 +4657,7 @@ def check_deepseek_v4_transport() -> dict[str, Any]:
         with tempfile.TemporaryDirectory(prefix="projectling-audit-health-") as audit_tmp:
             audit_path = Path(audit_tmp) / "model-requests.jsonl"
             audit_secret = "aidebug-audit-secret-must-not-appear"
-            audit_payload = client._build_payload(
+            audit_payload = main_client._build_payload(
                 messages=[{"role": "user", "content": audit_secret}],
                 tools=stream_tools_payload.get("tools"),
                 tool_choice="auto",
@@ -4426,7 +4667,7 @@ def check_deepseek_v4_transport() -> dict[str, Any]:
                 thinking_enabled=True,
                 max_tokens=8,
             )
-            audit_record = client._write_model_request_audit(
+            audit_record = main_client._write_model_request_audit(
                 audit_payload,
                 started_at=time.monotonic(),
                 status="ok",
@@ -4462,11 +4703,17 @@ def check_deepseek_v4_transport() -> dict[str, Any]:
             and "thinking" not in think_payload
             and think_payload.get("temperature") is not None
         )
+        gemini_stream_thinking_ok = (
+            stream_payload.get("reasoning_effort") in {"low", "high"}
+            and not stream_google.get("thinking_config")
+            if executor_thinking
+            else "reasoning_effort" not in stream_payload
+            and stream_google.get("thinking_config") == {"thinking_budget": 0}
+        )
         stream_ok = (
             stream_payload.get("model") == executor_model
             and stream_payload.get("stream_options") == {"include_usage": True}
-            and "reasoning_effort" not in stream_payload
-            and stream_google.get("thinking_config") == {"thinking_budget": 0}
+            and gemini_stream_thinking_ok
             and "thinking" not in stream_payload
             and stream_payload.get("temperature") is not None
         )
@@ -6027,11 +6274,11 @@ def check_api_settings_provider_persistence_contract() -> dict[str, Any]:
             and _max_width(blank_stdout) <= 20
             and blank_stdout.count("未输入，保持原样") >= 2
             and "主星模型保留" in blank_stdout
-            and "辅星模型保留" in blank_stdout
+            and "执行星模型保留" in blank_stdout
         )
         settings_render_ok = (
             "主星" in settings_text
-            and "执行模型" in settings_text
+            and "执行星模型" in settings_text
             and "gemini-round58-pro" in settings_text
             and "gemini-round58-flash" in settings_text
         )
@@ -6318,9 +6565,9 @@ def check_provider_switch_contract() -> dict[str, Any]:
             "当前 [Gemini]" in gemini_settings
             and "当前 [DeepSeek]" in deepseek_settings
             and "主星模型" in gemini_settings
-            and "执行模型" in gemini_settings
+            and "执行星模型" in gemini_settings
             and "主星模型" in deepseek_settings
-            and "执行模型" in deepseek_settings
+            and "执行星模型" in deepseek_settings
         )
         secret_ok = "fixture-provider-contract" not in gemini_settings and "fixture-provider-contract" not in deepseek_settings
     except Exception as exc:
@@ -7175,6 +7422,9 @@ def check_settings_status_width_contract() -> dict[str, Any]:
         provider_menu_ok = False
         provider_menu_text = ""
         deepseek_model_choices_ok = False
+        status_surface_ok = True
+        status_surface_secret_ok = True
+        motd_surface_ok = True
         try:
             projectling_core.load_config = lambda: probe_config
             projectling_core._cleanup_legacy_runtime = lambda _config: None
@@ -7185,6 +7435,8 @@ def check_settings_status_width_contract() -> dict[str, Any]:
                 and "deepseek-chat" not in deepseek_model_ids
                 and "deepseek-reasoner" not in deepseek_model_ids
             )
+            probe_role = projectling_core.load_roster(probe_config)[0]
+            probe_bundle = projectling_core.resolve_persona_bundle(probe_config, role=probe_role, seed=1)
             for width in (16, 20, 24, 32, 40, 48):
                 projectling_core.shutil.get_terminal_size = lambda _fallback=(80, 24), columns=width: _Size(columns)
                 pages = {
@@ -7194,6 +7446,23 @@ def check_settings_status_width_contract() -> dict[str, Any]:
                     "persona": lambda: projectling_core._run_persona_settings_ui(probe_config),
                     "system": lambda: projectling_core._render_system_settings(probe_config),
                     "websearch": projectling_core._run_websearch_settings_ui,
+                    "status": lambda: projectling_core._render_surface_status(
+                        projectling_core._build_surface_status_payload(probe_config)
+                    ),
+                    "motd": lambda columns=width: print(
+                        "\n".join(
+                            projectling_core.render_motd_card(
+                                columns,
+                                probe_role,
+                                seed=1,
+                                remaining_text="剩余 1 小时 00 分钟",
+                                settings_label="输入 0 进入设置",
+                                max_lines=12,
+                                persona_bundle=probe_bundle,
+                                status_line=projectling_core._dualstar_surface_line(probe_config),
+                            )
+                        )
+                    ),
                 }
                 for name, renderer in pages.items():
                     stdout = io.StringIO()
@@ -7208,12 +7477,12 @@ def check_settings_status_width_contract() -> dict[str, Any]:
                     if name == "root":
                         required_text_ok = required_text_ok and all(
                             marker in plain_text
-                            for marker in ("设置中心", "当前", "主星", "执行", "API 与模型", "搜索", "系统")
+                            for marker in ("设置中心", "当前", "主星", "执行星", "API 与模型", "搜索", "系统")
                         )
                     if name == "api":
                         required_text_ok = required_text_ok and all(
                             marker in plain_text
-                            for marker in ("API 与模型", "当前", "主星", "执行", "地址", "连通测试", "生成", "运行")
+                            for marker in ("API 与模型", "当前", "主星", "执行星", "地址", "连通测试", "生成", "运行")
                         )
                     if name == "gemini":
                         required_text_ok = required_text_ok and all(marker in plain_text for marker in ("Gemini 参数", "Top P", "Extra Body"))
@@ -7233,6 +7502,19 @@ def check_settings_status_width_contract() -> dict[str, Any]:
                         required_text_ok = required_text_ok and all(marker in plain_text for marker in ("系统设置", "协作模式"))
                     if name == "websearch":
                         required_text_ok = required_text_ok and all(marker in plain_text for marker in ("搜索设置", "摘要 Key", "网页 Key", "接口地址"))
+                    if name == "status":
+                        status_surface_ok = status_surface_ok and all(
+                            marker in plain_text
+                            for marker in ("PROJECT凌 状态", "服务商", "协作模式", "主星模型", "执行星模型", "主星角色", "执行星角色", "API")
+                        )
+                        status_surface_secret_ok = status_surface_secret_ok and "fixture-width-contract" not in plain_text
+                    if name == "motd":
+                        motd_surface_ok = motd_surface_ok and (
+                            "主星：" in plain_text
+                            and "主角色" not in plain_text
+                            and "辅导位" not in plain_text
+                            and "fixture-width-contract" not in plain_text
+                        )
 
             provider_menu_config = replace(probe_config, api_provider="deepseek")
             projectling_core.shutil.get_terminal_size = lambda _fallback=(80, 24): _Size(80)
@@ -7311,8 +7593,8 @@ def check_settings_status_width_contract() -> dict[str, Any]:
                 )
 
             direct_settings_expectations = {
-                "api": ("API 与模型", "当前", "主星", "执行", "地址", "超时", "‹ 0  返回", "选择"),
-                "gemini": ("API 与模型", "Gemini", "主星", "执行", "连通测试", "选择"),
+                "api": ("API 与模型", "当前", "主星", "执行星", "地址", "超时", "‹ 0  返回", "选择"),
+                "gemini": ("API 与模型", "Gemini", "主星", "执行星", "连通测试", "选择"),
                 "websearch": ("搜索设置", "摘要 Key", "网页 Key", "接口地址", "选择"),
             }
             for command_name, command_label in (("settings", "settings"), ("/settings", "slash")):
@@ -7407,7 +7689,7 @@ def check_settings_status_width_contract() -> dict[str, Any]:
             and "api-test fail" in api_text
             and "gemini" in api_text
             and "主星" in api_text
-            and "辅星" in api_text
+            and "执行星" in api_text
             and "下一步" in api_text
             and all(token in api_text for token in ("API Key", "Base URL", "模型名", "网络"))
         )
@@ -7441,6 +7723,7 @@ def check_settings_status_width_contract() -> dict[str, Any]:
             and "fixture-width-contract" not in api_text
             and "fixture-width-websearch" not in "\n".join((websearch_tab_text, websearch_save_text, websearch_blank_text, websearch_missing_text))
             and direct_settings_secret_ok
+            and status_surface_secret_ok
         )
     except Exception as exc:
         return item("settings_status_width_contract", 0, "fail", [f"exception={exc}"], "修复 settings/status width contract。")
@@ -7459,6 +7742,8 @@ def check_settings_status_width_contract() -> dict[str, Any]:
         "websearch_blank": websearch_blank_ok,
         "websearch_missing": websearch_missing_ok,
         "direct_settings_cli": not direct_settings_failures and direct_settings_required_ok and direct_settings_usage_ok,
+        "status_surface": status_surface_ok,
+        "motd_surface": motd_surface_ok,
         "secret_redaction": secret_ok,
     }
     direct_settings_ok = checks["direct_settings_cli"]
@@ -7501,6 +7786,8 @@ def check_settings_status_width_contract() -> dict[str, Any]:
         f"blank={_compact_bool_flag(websearch_blank_ok)} missing={_compact_bool_flag(websearch_missing_ok)}"
     )
     secret_row = f"sec={_compact_bool_flag(secret_ok)}"
+    status_row = f"status_surface={_compact_bool_flag(status_surface_ok)}"
+    motd_row = f"motd_surface={_compact_bool_flag(motd_surface_ok)}"
     settings_density_rows = [
         *render_evidence[:3],
         render_fail_row,
@@ -7513,6 +7800,8 @@ def check_settings_status_width_contract() -> dict[str, Any]:
         web_width_row,
         web_tab_row,
         direct_settings_summary,
+        status_row,
+        motd_row,
         secret_row,
     ]
     direct_settings_verbose_labels = (
@@ -7559,6 +7848,8 @@ def check_settings_status_width_contract() -> dict[str, Any]:
         web_width_row,
         web_tab_row,
         direct_settings_summary,
+        status_row,
+        motd_row,
         f"settings_status_density=limit={settings_status_density_limit} failures={_compact_list_or_dash(settings_status_density_failures)}",
         secret_row,
     ]
@@ -7776,7 +8067,7 @@ def check_gemini_diagnostic_output_contract() -> dict[str, Any]:
             and _max_width(api_human_text) <= 20
             and "api-test fail" in api_human_text
             and "provider" in api_human_text
-            and "辅星" in api_human_text
+            and "执行星" in api_human_text
             and "base" in api_human_text
             and "下一步" in api_human_text
             and all(token in api_human_text for token in ("API Key", "Base URL", "模型名", "网络"))
@@ -7932,7 +8223,7 @@ def check_gemini_diagnostic_output_contract() -> dict[str, Any]:
                     api_rc != 1
                     or api_width > width
                     or "provider" not in api_text
-                    or "辅星" not in api_text
+                    or "执行星" not in api_text
                     or "base" not in api_text
                     or "下一步" not in api_text
                     or not api_recovery_ok
@@ -8597,20 +8888,70 @@ def check_persona_split() -> dict[str, Any]:
     persona_locked = bool(data.get("persona_locked"))
     liaison_locked = bool(data.get("liaison_locked"))
     split_ok = bool(main_zh and main_en and liaison_zh and liaison_en and (main_zh != liaison_zh or main_en != liaison_en))
+    swap_ok = False
+    terminology_ok = False
+    swap_detail = "not-run"
+    previous_read_only = os.environ.pop("PROJECTLING_RUNTIME_STATE_READ_ONLY", None)
+    try:
+        import projectling as projectling_module
+
+        config = projectling_module.load_config()
+        roster = projectling_module.load_roster(config)
+        if len(roster) >= 2:
+            with tempfile.TemporaryDirectory(prefix="projectling-dualstar-health-") as tmp:
+                probe_config = replace(config, runtime_dir=Path(tmp))
+                first, second = roster[:2]
+                projectling_module.select_current_role_by_name(first.name_en, probe_config)
+                projectling_module.select_liaison_role_by_name(second.name_en, probe_config)
+                projectling_module.select_current_role_by_name(second.name_en, probe_config)
+                probe_bundle = projectling_module.resolve_persona_bundle(probe_config)
+                configured_executor = projectling_module.configured_liaison_role(probe_config)
+                swap_ok = bool(
+                    probe_bundle.main.name_en == second.name_en
+                    and configured_executor is not None
+                    and configured_executor.name_en == first.name_en
+                    and probe_bundle.liaison is not None
+                    and probe_bundle.liaison.name_en == first.name_en
+                    and probe_bundle.source == "selected"
+                )
+                terminology_ok = (
+                    "主星：" in probe_bundle.dualstar_label
+                    and "执行星：" in probe_bundle.dualstar_label
+                    and "主角色" not in probe_bundle.dualstar_label
+                    and "辅导位" not in probe_bundle.dualstar_label
+                )
+                active_role_prompt = projectling_module.load_prompt_bundle(probe_config).role_prompt
+                terminology_ok = terminology_ok and (
+                    "主星" in active_role_prompt
+                    and "执行星" in active_role_prompt
+                    and "主角色" not in active_role_prompt
+                    and "辅导位" not in active_role_prompt
+                    and "执行位" not in active_role_prompt
+                )
+                swap_detail = f"{first.name_en}->{second.name_en}/{configured_executor.name_en if configured_executor else '-'}"
+        else:
+            swap_detail = f"roster={len(roster)}"
+    except Exception as exc:
+        swap_detail = f"exception={type(exc).__name__}:{exc}"
+    finally:
+        if previous_read_only is not None:
+            os.environ["PROJECTLING_RUNTIME_STATE_READ_ONLY"] = previous_read_only
     evidence = [
         f"main={main_zh} / {main_en}",
         f"liaison={liaison_zh} / {liaison_en}",
         f"persona_liaison={liaison_label}",
         f"locks=main:{_compact_bool_flag(persona_locked)} liaison:{_compact_bool_flag(liaison_locked)}",
+        f"swap={_compact_bool_flag(swap_ok)} detail={swap_detail}",
+        f"terminology={_compact_bool_flag(terminology_ok)}",
     ]
-    score = 100 if split_ok else 55
+    score = 100 if split_ok and swap_ok and terminology_ok else 55
     score = _append_runtime_repr_density_guard(evidence, score)
     return item(
         "persona_split",
         score,
         status_from_score(score),
         evidence,
-        "检查 persona 绑定是否仍然被融合，或确认执行星是否可见。" if not split_ok else "",
+        "检查双星是否融合、主星/执行星术语是否漂移，或主星选中当前执行星时是否安全换位。" if score < 85 else "",
     )
 
 
@@ -8884,13 +9225,21 @@ def check_projectling_tests() -> dict[str, Any]:
 
 
 def check_desktop_goal_anchor() -> dict[str, Any]:
-    anchor = PROJECTLING_DIR.parent / "PROJECT凌-OVERNIGHT-GOAL.md"
+    anchor_name = "PROJECT凌-OVERNIGHT-GOAL.md"
+    override = str(os.environ.get("PROJECTLING_GOAL_ANCHOR") or "").strip()
+    candidates = [
+        Path(override).expanduser() if override else None,
+        HOME / anchor_name,
+        PROJECTLING_DIR.parent / anchor_name,
+    ]
+    existing = next((path for path in candidates if path is not None and path.is_file()), None)
+    anchor = existing or (HOME / anchor_name if _is_android_termux_runtime() else PROJECTLING_DIR.parent / anchor_name)
     meta = file_meta(anchor)
     evidence = [
         f"exists={_compact_bool_flag(meta.get('exists'))}",
         f"bytes={meta.get('bytes', 0)}",
         f"age={meta.get('age_seconds', '-')}",
-        "file=PROJECT凌-OVERNIGHT-GOAL.md",
+        f"file={anchor_name}",
     ]
     if not meta.get("exists"):
         evidence.append("sections=0/5")
@@ -10201,7 +10550,6 @@ def check_next_plan_artifact() -> dict[str, Any]:
         "projectling_profile_detail_integrity",
         "projectling_profile_freshness_policy",
         "class=",
-        "class=environment-gated",
         "Verification Sources",
         "source_freshness",
         "profile_samples",
@@ -10308,10 +10656,23 @@ def check_next_plan_artifact() -> dict[str, Any]:
             json_missing.append("required_checks:duplicate")
         if required_names != list(NEXT_PLAN_THRESHOLD_NAMES):
             json_missing.append("required_checks:canonical_order")
+    allowed_weak_classes = {"environment-gated", "observation-only", "code-regression", "evidence-stale"}
     if not isinstance(weak_spots, list):
         json_missing.append("weak_spots=list")
     elif weak_spots and not all(isinstance(item, dict) and item.get("class") for item in weak_spots):
         json_missing.append("weak_spot_classes")
+    elif isinstance(weak_spots, list):
+        weak_classes = {
+            str(item.get("class") or "")
+            for item in weak_spots
+            if isinstance(item, dict) and str(item.get("class") or "")
+        }
+        unexpected_weak_classes = sorted(weak_classes - allowed_weak_classes)
+        if unexpected_weak_classes:
+            json_missing.append("weak_spot_classes:unexpected")
+        for weak_class in sorted(weak_classes):
+            if f"class={weak_class}" not in text:
+                json_missing.append(f"weak_spot_class_markdown:{weak_class}")
     expected_health_generated_at = str(current_health.get("generated_at") or "")
     expected_summary_generated_at = str(plan_json.get("generated_at") or expected_health_generated_at)
     expected_critical_summary = _critical_check_summary(
@@ -12240,7 +12601,9 @@ def check_live_smoke_cost_efficiency() -> dict[str, Any]:
     sample: dict[str, Any] | None = None
     for row in reversed(rows):
         live = row.get("live_chat") if isinstance(row.get("live_chat"), dict) else {}
-        if isinstance(live.get("request_usage_total"), dict):
+        cumulative = live.get("request_usage_total") if isinstance(live.get("request_usage_total"), dict) else {}
+        breakdown = live.get("request_breakdown") if isinstance(live.get("request_breakdown"), list) else []
+        if int(cumulative.get("api_calls") or 0) > 0 and int(cumulative.get("prompt_tokens") or 0) > 0 and breakdown:
             sample = row
             break
     if sample is None:
@@ -12531,7 +12894,8 @@ def write_android_readiness_artifact(
         "pkg update",
         "pkg install -y python tmux git",
         "mkdir -p ~/.termux",
-        "grep -qxF 'allow-external-apps=true' ~/.termux/termux.properties 2>/dev/null || printf '\\nallow-external-apps=true\\n' >> ~/.termux/termux.properties",
+        "touch ~/.termux/termux.properties",
+        "{ grep -Eiv '^[[:space:]]*allow-external-apps[[:space:]]*=' ~/.termux/termux.properties || true; printf '\\nallow-external-apps=true\\n'; } > ~/.termux/termux.properties.tmp && mv ~/.termux/termux.properties.tmp ~/.termux/termux.properties",
         "termux-reload-settings",
         "command -v am tmux python3 bash",
         "test -x /data/data/com.termux/files/usr/bin/bash",
@@ -12570,17 +12934,7 @@ def check_android_termux_readiness() -> dict[str, Any]:
     adb_probe = _host_adb_probe()
     adb_device_count = int(adb_probe.get("device") or 0)
     adb_unauthorized_count = int(adb_probe.get("unauthorized") or 0)
-    allow_external = False
-    if properties.is_file():
-        try:
-            text = properties.read_text(encoding="utf-8", errors="replace")
-            allow_external = any(
-                line.strip().lower() == "allow-external-apps=true"
-                for line in text.splitlines()
-                if line.strip() and not line.lstrip().startswith("#")
-            )
-        except OSError:
-            allow_external = False
+    allow_external = _termux_boolean_property_enabled(properties, "allow-external-apps")
     is_android_termux = bool(termux_bash.exists() and am_path and os.environ.get("PREFIX", "").startswith("/data/data/com.termux"))
     required = {
         "am": bool(am_path),
@@ -12588,6 +12942,7 @@ def check_android_termux_readiness() -> dict[str, Any]:
         "termux_bash": termux_bash.exists(),
         "projectling_run": PROJECTLING_RUN.exists(),
         "aidebug_dir": AIDEBUG_DIR.exists(),
+        "allow_external_apps": allow_external,
     }
     missing = [name for name, ok in required.items() if not ok]
     artifact = write_android_readiness_artifact(
@@ -12601,7 +12956,7 @@ def check_android_termux_readiness() -> dict[str, Any]:
         adb_probe=adb_probe,
         missing=missing,
     )
-    score = 100 if is_android_termux and not missing else 85 if not is_android_termux else max(25, 100 - len(missing) * 20)
+    score = _android_termux_readiness_score(is_android_termux=is_android_termux, missing=missing)
     evidence = [
         f"runtime={'android-termux' if is_android_termux else 'non-android-compat'}",
         f"am={am_path or 'missing'}",
@@ -12641,7 +12996,13 @@ def check_android_termux_readiness() -> dict[str, Any]:
     score = _append_runtime_repr_density_guard(evidence, score)
     next_action = ""
     if is_android_termux and missing:
-        next_action = "安装缺失组件并执行 termux-reload-settings 后复跑 aidebug projectling-auto。"
+        component_missing = [name for name in missing if name != "allow_external_apps"]
+        if "allow_external_apps" in missing and not component_missing:
+            next_action = "设置 ~/.termux/termux.properties 的 allow-external-apps=true，执行 termux-reload-settings 后复跑。"
+        elif "allow_external_apps" in missing:
+            next_action = "安装缺失组件、设置 allow-external-apps=true，并执行 termux-reload-settings 后复跑。"
+        else:
+            next_action = "安装缺失组件并执行 termux-reload-settings 后复跑 aidebug projectling-auto。"
     elif not is_android_termux:
         if adb_unauthorized_count:
             next_action = "先在 Android 设备上确认 USB 调试授权，再在真实 Android Termux 中复跑以验证 am 前台标签页启动。"
@@ -12855,6 +13216,1186 @@ def check_motd_zshrc_smoke() -> dict[str, Any]:
     )
 
 
+def check_multi_provider_parameter_contract() -> dict[str, Any]:
+    if DeepSeekClient is None or load_config is None:
+        return item("multi_provider_parameter_contract", 0, "fail", ["projectling imports unavailable"], "修复多 Provider 参数导入链。")
+    try:
+        import projectling as projectling_module
+
+        config = load_config()
+        StarAPIConfig = projectling_module.StarAPIConfig
+        base = {
+            "slot": "main",
+            "api_key": "fixture-multi-provider-key",
+            "base_url": "https://example.invalid/v1",
+            "parameter_profile": "coding",
+            "timeout_seconds": 30.0,
+            "retry_count": 0,
+            "enable_sse": True,
+            "key_source": "slot",
+        }
+        stars = {
+            "gpt56": StarAPIConfig(provider="gpt", model="gpt-5.6-codex", parameters={"reasoning_effort": "ultra", "verbosity": "high"}, **base),
+            "gpt55": StarAPIConfig(provider="gpt", model="gpt-5.5-codex", parameters={"reasoning_effort": "ultra", "verbosity": "low"}, **base),
+            "gemini": StarAPIConfig(provider="gemini", model="gemini-3-flash", parameters={"temperature": 0.7, "top_p": 0.95, "top_k": 48, "reasoning_effort": "low"}, **base),
+            "grok": StarAPIConfig(provider="grok", model="grok-4", parameters={"temperature": 0.4, "top_p": 0.9, "reasoning_effort": "high"}, **base),
+            "deepseek": StarAPIConfig(provider="deepseek", model="deepseek-v4-pro", parameters={"temperature": 0.1, "reasoning_effort": "max"}, **base),
+        }
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "probe"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}},
+                ],
+            }
+        ]
+
+        def payload(star: Any) -> dict[str, Any]:
+            return DeepSeekClient(config, star)._build_payload(  # type: ignore[operator]
+                messages=messages,
+                tools=None,
+                tool_choice="none",
+                temperature=None,
+                stream=False,
+                model=None,
+                thinking_enabled=True,
+                max_tokens=None,
+            )
+
+        payloads = {name: payload(star) for name, star in stars.items()}
+        gemini_extra = payloads["gemini"].get("extra_body") if isinstance(payloads["gemini"].get("extra_body"), dict) else {}
+        gemini_google = gemini_extra.get("google") if isinstance(gemini_extra.get("google"), dict) else {}
+        gemini_generation = gemini_google.get("generation_config") if isinstance(gemini_google.get("generation_config"), dict) else {}
+        normalized_55 = projectling_module._normalize_star_parameters(
+            "gpt", "coding", model="gpt-5.5-codex", custom={"reasoning_effort": "ultra"}
+        )
+        reserved_filtered = projectling_module._normalize_star_parameters(
+            "grok",
+            "default",
+            model="grok-4",
+            custom={"model": "must-not-override", "messages": ["secret"], "api_key": "must-not-pass"},
+        )
+        checks = {
+            "gpt56_ultra": payloads["gpt56"].get("reasoning_effort") == "ultra",
+            "gpt55_xhigh": payloads["gpt55"].get("reasoning_effort") == "xhigh" and normalized_55.get("reasoning_effort") == "xhigh",
+            "gpt_verbosity": payloads["gpt56"].get("verbosity") == "high" and "temperature" not in payloads["gpt56"],
+            "gemini_sampling": payloads["gemini"].get("temperature") == 0.7 and payloads["gemini"].get("top_p") == 0.95,
+            "gemini_top_k": gemini_generation.get("topK") == 48,
+            "grok_contract": payloads["grok"].get("reasoning_effort") == "high" and payloads["grok"].get("temperature") == 0.4,
+            "deepseek_contract": payloads["deepseek"].get("thinking") == {"type": "enabled"} and payloads["deepseek"].get("reasoning_effort") == "max",
+            "multimodal_preserved": all(isinstance(value.get("messages", [{}])[0].get("content"), list) for value in payloads.values()),
+            "reserved_filtered": all(key not in reserved_filtered for key in ("model", "messages", "api_key")),
+        }
+    except Exception as exc:
+        return item("multi_provider_parameter_contract", 0, "fail", [f"exception={type(exc).__name__}:{exc}"], "修复 GPT/Gemini/Grok/DeepSeek 参数合同。")
+    failures = [name for name, ok in checks.items() if not ok]
+    evidence = [
+        f"gpt=56:{_compact_bool_flag(checks['gpt56_ultra'])}/ultra 55:{_compact_bool_flag(checks['gpt55_xhigh'])}/xhigh verbosity:{_compact_bool_flag(checks['gpt_verbosity'])}",
+        f"gemini=sampling:{_compact_bool_flag(checks['gemini_sampling'])} topK:{_compact_bool_flag(checks['gemini_top_k'])}",
+        f"grok={_compact_bool_flag(checks['grok_contract'])} deepseek={_compact_bool_flag(checks['deepseek_contract'])}",
+        f"multimodal={_compact_bool_flag(checks['multimodal_preserved'])} reserved_filter={_compact_bool_flag(checks['reserved_filtered'])}",
+    ]
+    if failures:
+        evidence.append("failures=" + ",".join(failures))
+    score = 100 if not failures else max(25, 100 - len(failures) * 15)
+    return item(
+        "multi_provider_parameter_contract",
+        score,
+        status_from_score(score),
+        evidence,
+        "修复 Provider 参数过滤、GPT reasoning 档位或多模态消息透传。" if failures else "",
+    )
+
+
+def check_relay_multi_provider_local_contract() -> dict[str, Any]:
+    if load_config is None:
+        return item("relay_multi_provider_local_contract", 0, "fail", ["projectling imports unavailable"], "修复 relay matrix 多 Provider 导入链。")
+    try:
+        import importlib.util
+
+        script = PROJECTLING_DIR / "aidebug" / "runner" / "relay_model_matrix.py"
+        spec = importlib.util.spec_from_file_location("projectling_relay_model_matrix_contract", script)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("relay_model_matrix spec unavailable")
+        matrix = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(matrix)
+        config = load_config()
+        contracts = matrix.build_local_provider_contracts(config)
+        providers = contracts.get("providers") if isinstance(contracts.get("providers"), dict) else {}
+        dual_star = contracts.get("dual_star_isolation") if isinstance(contracts.get("dual_star_isolation"), dict) else {}
+        gpt55_star = replace(
+            matrix.star_for_provider(config, "gpt", slot="main"),
+            api_key="fixture-relay-gpt55",
+            model="gpt-5.5-codex",
+        )
+        gpt55 = matrix.provider_parameter_payload_contract(config, gpt55_star, "reasoning_effort")
+        listing = matrix.build_model_listing(
+            ["gpt-5.6-codex", "gemini-3-flash", "grok-4-fast", "deepseek-v4-pro"],
+            ["gpt-5.6-codex", "grok-4-fast"],
+            [],
+            scope="all",
+        )
+        completed = run_cmd([sys.executable, str(script), "--local-contracts"], cwd=PROJECTLING_DIR, timeout=30)
+        try:
+            cli_payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            cli_payload = {}
+        provider_parameters_ok = all(
+            bool(contract.get("ok"))
+            and list((contract.get("parameters") or {}).keys()) == list(matrix.PROVIDER_PARAMETER_NAMES[provider])
+            for provider, contract in providers.items()
+            if provider in matrix.PROVIDER_PARAMETER_NAMES
+        ) and set(providers) == set(matrix.PROVIDER_ORDER)
+        provider_counts = listing.get("available_provider_counts") if isinstance(listing.get("available_provider_counts"), dict) else {}
+        selected_counts = listing.get("selected_provider_counts") if isinstance(listing.get("selected_provider_counts"), dict) else {}
+        auto_source = (PROJECTLING_DIR / "aidebug" / "runner" / "projectling_auto.py").read_text(encoding="utf-8", errors="replace")
+        checks = {
+            "provider_parameters": provider_parameters_ok,
+            "gpt55_normalization": gpt55.get("local_sent") is True and gpt55.get("sent_value") == "xhigh" and gpt55.get("expected_value") == "xhigh",
+            "dual_star_isolation": contracts.get("ok") is True and dual_star.get("ok") is True and (dual_star.get("main") or {}).get("provider") == "gpt" and (dual_star.get("executor") or {}).get("provider") == "grok",
+            "provider_listing": all(provider_counts.get(provider) == 1 for provider in matrix.PROVIDER_ORDER) and selected_counts.get("gpt") == 1 and selected_counts.get("grok") == 1,
+            "provider_classification": all(
+                matrix.model_provider(model) == provider
+                for model, provider in (
+                    ("gpt-5.6-codex", "gpt"),
+                    ("gemini-3-flash", "gemini"),
+                    ("grok-4-fast", "grok"),
+                    ("deepseek-v4-pro", "deepseek"),
+                )
+            ),
+            "auto_dual_instrumentation": all(
+                token in auto_source
+                for token in (
+                    "engine.main_client = _UsageRecordingClient(engine.main_client)",
+                    "engine.executor_client = _UsageRecordingClient(engine.executor_client)",
+                    '"main_provider": live.get("main_provider")',
+                    '"executor_provider": live.get("executor_provider")',
+                )
+            ),
+            "cli_contract": completed.returncode == 0 and cli_payload.get("ok") is True,
+            "secret_redaction": not _contains_unmasked_secret(
+                completed.stdout + completed.stderr,
+                exact_secrets=("fixture-relay-gpt55",),
+            ),
+        }
+    except Exception as exc:
+        return item("relay_multi_provider_local_contract", 0, "fail", [f"exception={type(exc).__name__}:{exc}"], "修复 relay matrix 多 Provider 本地合同。")
+    failures = [name for name, ok in checks.items() if not ok]
+    evidence = [
+        f"providers={','.join(sorted(providers))} params={_compact_bool_flag(checks['provider_parameters'])}",
+        f"gpt55={gpt55.get('sent_value')} dual={_compact_bool_flag(checks['dual_star_isolation'])}",
+        f"listing={_compact_bool_flag(checks['provider_listing'])} classify={_compact_bool_flag(checks['provider_classification'])} auto={_compact_bool_flag(checks['auto_dual_instrumentation'])} cli={completed.returncode}",
+        f"sec={_compact_bool_flag(checks['secret_redaction'])}",
+    ]
+    if failures:
+        evidence.append("failures=" + ",".join(failures))
+    score = 100 if not failures else max(25, 100 - len(failures) * 20)
+    return item(
+        "relay_multi_provider_local_contract",
+        score,
+        status_from_score(score),
+        evidence,
+        "修复 relay matrix Provider 分类、GPT/Grok 参数合同、双星隔离或无网络 CLI。" if failures else "",
+    )
+
+
+def check_dual_star_settings_persistence_contract() -> dict[str, Any]:
+    if load_config is None:
+        return item("dual_star_settings_persistence_contract", 0, "fail", ["projectling imports unavailable"], "修复双星配置导入链。")
+    try:
+        import projectling as projectling_module
+
+        credentials = {
+            "gpt": ("fixture-gpt-key", "https://relay.invalid/v1"),
+            "gemini": ("fixture-gemini-key", "https://relay.invalid/v1"),
+            "grok": ("fixture-grok-key", "https://relay.invalid/v1"),
+            "deepseek": ("fixture-deepseek-key", "https://api.deepseek.invalid"),
+        }
+        models = {
+            "gpt": ("gpt-5.6-codex", "gpt-5.5-codex"),
+            "gemini": ("gemini-3.1-pro-preview", "gemini-3-flash"),
+            "grok": ("grok-4", "grok-4-fast"),
+            "deepseek": ("deepseek-v4-pro", "deepseek-v4-flash"),
+        }
+        legacy_parameters = {
+            "gpt": {},
+            "gemini": {"temperature": 1.8, "reasoning_effort": "high"},
+            "grok": {},
+            "deepseek": {"temperature": 0.2, "reasoning_effort": "high"},
+        }
+        merged = {
+            "PROJECTLING_MAIN_PROVIDER": "gpt",
+            "PROJECTLING_MAIN_MODEL": "gpt-5.6-codex",
+            "PROJECTLING_MAIN_PARAMETER_PROFILE": "coding",
+            "PROJECTLING_MAIN_PARAMS_JSON": '{"reasoning_effort":"ultra"}',
+            "PROJECTLING_EXECUTOR_PROVIDER": "grok",
+            "PROJECTLING_EXECUTOR_MODEL": "grok-4-fast",
+            "PROJECTLING_EXECUTOR_PARAMETER_PROFILE": "creative",
+            "PROJECTLING_EXECUTOR_PARAMS_JSON": '{"temperature":0.8}',
+        }
+        build = projectling_module._star_api_config_from_merged
+        main = build(
+            merged,
+            slot="main",
+            legacy_provider="gemini",
+            credentials=credentials,
+            models=models,
+            legacy_parameters=legacy_parameters,
+            default_timeout_seconds=180.0,
+            default_retry_count=3,
+            default_enable_sse=True,
+        )
+        executor = build(
+            merged,
+            slot="executor",
+            legacy_provider="gemini",
+            credentials=credentials,
+            models=models,
+            legacy_parameters=legacy_parameters,
+            default_timeout_seconds=180.0,
+            default_retry_count=3,
+            default_enable_sse=True,
+        )
+        legacy_merged = {"PROJECTLING_API_PROVIDER": "gemini"}
+        legacy_main = build(
+            legacy_merged,
+            slot="main",
+            legacy_provider="gemini",
+            credentials=credentials,
+            models=models,
+            legacy_parameters=legacy_parameters,
+            default_timeout_seconds=180.0,
+            default_retry_count=3,
+            default_enable_sse=True,
+        )
+        legacy_executor = build(
+            legacy_merged,
+            slot="executor",
+            legacy_provider="gemini",
+            credentials=credentials,
+            models=models,
+            legacy_parameters=legacy_parameters,
+            default_timeout_seconds=180.0,
+            default_retry_count=3,
+            default_enable_sse=True,
+        )
+        sandbox = HEALTH_SANDBOX_DIR / "dual-star-settings-v2" / "env"
+        sandbox.parent.mkdir(parents=True, exist_ok=True)
+        sandbox.write_text("", encoding="utf-8")
+        sandbox_updates = {
+            "PROJECTLING_MAIN_PROVIDER": "gpt",
+            "PROJECTLING_MAIN_MODEL": "gpt-5.6-codex",
+            "PROJECTLING_MAIN_PARAMETER_PROFILE": "coding",
+            "PROJECTLING_EXECUTOR_PROVIDER": "grok",
+            "PROJECTLING_EXECUTOR_MODEL": "grok-4-fast",
+            "PROJECTLING_EXECUTOR_PARAMETER_PROFILE": "creative",
+        }
+        environment_before = {key: os.environ.get(key) for key in sandbox_updates}
+        try:
+            projectling_module.save_env_config(sandbox_updates, path=sandbox)
+            saved = projectling_module._load_env_file(sandbox)
+            saved_text = sandbox.read_text(encoding="utf-8", errors="replace")
+        finally:
+            for key, value in environment_before.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+        checks = {
+            "main_isolated": main.provider == "gpt" and main.model == "gpt-5.6-codex" and main.parameters.get("reasoning_effort") == "ultra",
+            "executor_isolated": executor.provider == "grok" and executor.model == "grok-4-fast" and executor.parameters.get("temperature") == 0.8,
+            "profiles": main.parameter_profile == "coding" and executor.parameter_profile == "creative",
+            "legacy_migration": legacy_main.provider == "gemini" and legacy_main.model == models["gemini"][0] and legacy_executor.model == models["gemini"][1],
+            "profile_beats_legacy": main.parameters.get("temperature") is None and executor.parameters.get("temperature") == 0.8,
+            "saved": saved.get("PROJECTLING_MAIN_PROVIDER") == "gpt" and saved.get("PROJECTLING_EXECUTOR_PROVIDER") == "grok",
+            "ordered_sections": "# Dual-star API configuration" in saved_text and "# GPT / Codex provider defaults" in saved_text and "# Grok provider defaults" in saved_text,
+        }
+    except Exception as exc:
+        return item("dual_star_settings_persistence_contract", 0, "fail", [f"exception={type(exc).__name__}:{exc}"], "修复双星配置持久化或 legacy 迁移。")
+    failures = [name for name, ok in checks.items() if not ok]
+    evidence = [
+        f"stars=main:{main.provider}/{main.model}/{main.parameter_profile} exec:{executor.provider}/{executor.model}/{executor.parameter_profile}",
+        f"legacy={_compact_bool_flag(checks['legacy_migration'])} profile_precedence={_compact_bool_flag(checks['profile_beats_legacy'])}",
+        f"saved={_compact_bool_flag(checks['saved'])} sections={_compact_bool_flag(checks['ordered_sections'])}",
+    ]
+    if failures:
+        evidence.append("failures=" + ",".join(failures))
+    score = 100 if not failures else max(25, 100 - len(failures) * 20)
+    return item(
+        "dual_star_settings_persistence_contract",
+        score,
+        status_from_score(score),
+        evidence,
+        "修复 PROJECTLING_MAIN_*/EXECUTOR_* 保存、隔离或旧配置迁移。" if failures else "",
+    )
+
+
+def check_api_settings_star_isolation_contract() -> dict[str, Any]:
+    if load_config is None:
+        return item("api_settings_star_isolation_contract", 0, "fail", ["projectling imports unavailable"], "修复 Settings 双星导入链。")
+    try:
+        import core as projectling_core
+        import projectling as projectling_module
+
+        config = load_config()
+        main = replace(
+            config.main_api,
+            provider="gpt",
+            api_key="fixture-main-isolation-key",
+            model="gpt-5.6-codex",
+            parameter_profile="coding",
+            parameters={"reasoning_effort": "ultra", "verbosity": "low"},
+        )
+        executor = replace(
+            config.executor_api,
+            provider="gemini",
+            api_key="fixture-executor-isolation-key",
+            model="gemini-3-flash",
+            parameter_profile="data",
+            parameters={"temperature": 0.0, "top_p": 0.7, "top_k": 16, "reasoning_effort": "high"},
+        )
+        probe = replace(config, main_api=main, executor_api=executor, api_provider="gpt", api_key=main.api_key, base_url=main.base_url, model=main.model)
+        outputs: dict[str, str] = {}
+        width_failures: list[str] = []
+        old_size = projectling_core.shutil.get_terminal_size
+
+        class Size:
+            def __init__(self, columns: int) -> None:
+                self.columns = columns
+                self.lines = 24
+
+        try:
+            for width in (16, 24, 40, 80):
+                projectling_core.shutil.get_terminal_size = lambda _fallback=(80, 24), columns=width: Size(columns)
+                for slot in ("main", "executor"):
+                    buffer = io.StringIO()
+                    with contextlib.redirect_stdout(buffer):
+                        projectling_core._render_api_settings(probe, slot)
+                    text = projectling_core._strip_ansi(buffer.getvalue())
+                    outputs[f"{slot}-{width}"] = text
+                    max_width = max((projectling_core._display_width(line) for line in text.splitlines()), default=0)
+                    if max_width > width:
+                        width_failures.append(f"{slot}-w{width}:{max_width}")
+        finally:
+            projectling_core.shutil.get_terminal_size = old_size
+        main_text = outputs["main-80"]
+        executor_text = outputs["executor-80"]
+        source = (PROJECTLING_DIR / "core.py").read_text(encoding="utf-8", errors="replace")
+        checks = {
+            "main_surface": "主星 API 配置" in main_text and "GPT / Codex" in main_text and "gpt-5.6-codex" in main_text,
+            "executor_surface": "执行星 API 配置" in executor_text and "Gemini" in executor_text and "gemini-3-flash" in executor_text,
+            "no_cross_model": "gemini-3-flash" not in main_text and "gpt-5.6-codex" not in executor_text,
+            "secret_redaction": not _contains_unmasked_secret(main_text + executor_text, exact_secrets=(str(main.api_key), str(executor.api_key))),
+            "profiles": all(label in source for label in ("默认", "编程", "数据", "日常", "闲聊", "想象力")),
+            "providers": all(token in source for token in ("GPT / Codex", "Gemini", "Grok", "DeepSeek")),
+            "width": not width_failures,
+            "env_contract": all(key in projectling_module.PROJECT_ENV_OVERRIDE_KEYS for key in ("PROJECTLING_MAIN_PROVIDER", "PROJECTLING_MAIN_API_KEY", "PROJECTLING_EXECUTOR_PROVIDER", "PROJECTLING_EXECUTOR_API_KEY")),
+        }
+    except Exception as exc:
+        return item("api_settings_star_isolation_contract", 0, "fail", [f"exception={type(exc).__name__}:{exc}"], "修复 Settings 星位隔离、脱敏或窄屏布局。")
+    failures = [name for name, ok in checks.items() if not ok]
+    evidence = [
+        f"surface=main:{_compact_bool_flag(checks['main_surface'])} exec:{_compact_bool_flag(checks['executor_surface'])} cross:{_compact_bool_flag(checks['no_cross_model'])}",
+        f"profiles={_compact_bool_flag(checks['profiles'])} providers={_compact_bool_flag(checks['providers'])} env={_compact_bool_flag(checks['env_contract'])}",
+        f"width_fail={_compact_list_or_dash(width_failures)} sec={_compact_bool_flag(checks['secret_redaction'])}",
+    ]
+    if failures:
+        evidence.append("failures=" + ",".join(failures))
+    score = 100 if not failures else max(25, 100 - len(failures) * 20)
+    return item(
+        "api_settings_star_isolation_contract",
+        score,
+        status_from_score(score),
+        evidence,
+        "修复主星/执行星 Settings 隔离、Provider 选项或响应式布局。" if failures else "",
+    )
+
+
+def check_cross_provider_switch_contract() -> dict[str, Any]:
+    if ProjectLingEngine is None or DeepSeekClient is None or load_config is None:
+        return item("cross_provider_switch_contract", 0, "fail", ["projectling imports unavailable"], "修复跨 Provider 引擎导入链。")
+    try:
+        config = load_config()
+        main = replace(
+            config.main_api,
+            provider="gpt",
+            api_key="fixture-cross-main-key",
+            model="gpt-5.6-codex",
+            parameter_profile="coding",
+            parameters={"reasoning_effort": "ultra", "verbosity": "low"},
+        )
+        executor = replace(
+            config.executor_api,
+            provider="grok",
+            api_key="fixture-cross-executor-key",
+            model="grok-4-fast",
+            parameter_profile="data",
+            parameters={"temperature": 0.0, "top_p": 0.7, "reasoning_effort": "high"},
+        )
+        probe = replace(config, main_api=main, executor_api=executor, api_provider="gpt", api_key=main.api_key, base_url=main.base_url, model=main.model)
+        engine = ProjectLingEngine(probe)  # type: ignore[operator]
+        modes = {
+            mode: (engine._planner_model_for_mode(mode), engine._executor_model_for_mode(mode))
+            for mode in ("rapid", "standard", "precise")
+        }
+        casual = engine.preview_route("你好", allow_tools=True)
+        complex_route = engine.preview_route("请全面排查并修改这个复杂项目，完成验证。", allow_tools=True)
+        main_payload = DeepSeekClient(probe, main)._build_payload(  # type: ignore[operator]
+            messages=[{"role": "user", "content": "main"}], tools=None, tool_choice="none", temperature=None, stream=False, model=None, thinking_enabled=True, max_tokens=64
+        )
+        executor_payload = DeepSeekClient(probe, executor)._build_payload(  # type: ignore[operator]
+            messages=[{"role": "user", "content": "executor"}], tools=None, tool_choice="none", temperature=None, stream=False, model=None, thinking_enabled=True, max_tokens=64
+        )
+        audit_path = HEALTH_SANDBOX_DIR / "cross-provider-v2" / "audit.jsonl"
+        audit_path.parent.mkdir(parents=True, exist_ok=True)
+        if audit_path.exists():
+            audit_path.unlink()
+        record = engine.executor_client._write_model_request_audit(
+            executor_payload,
+            started_at=time.monotonic(),
+            status="ok",
+            attempts=1,
+            response_data={"model": executor.model, "choices": [{"finish_reason": "stop"}]},
+            path=audit_path,
+        )
+        audit_text = audit_path.read_text(encoding="utf-8", errors="replace")
+        checks = {
+            "clients": engine.main_client.provider() == "gpt" and engine.executor_client.provider() == "grok",
+            "models_fixed": all(pair == (main.model, executor.model) for pair in modes.values()),
+            "main_default": casual.get("request_slot") == "main" and casual.get("model") == main.model,
+            "plan_handoff_ready": complex_route.get("request_slot") == "main" and complex_route.get("executor_model") == executor.model and bool(complex_route.get("plan_required")),
+            "profile_routing": casual.get("temperature") is None and complex_route.get("temperature") is None and casual.get("temperature_source") == "star_parameter_profile",
+            "payload_isolation": main_payload.get("model") == main.model and executor_payload.get("model") == executor.model and "verbosity" not in executor_payload,
+            "audit_slot": record.get("slot") == "executor" and record.get("provider") == "grok" and record.get("configured_main_provider") == "gpt",
+            "secret_redaction": not _contains_unmasked_secret(audit_text, exact_secrets=(str(main.api_key), str(executor.api_key))),
+        }
+    except Exception as exc:
+        return item("cross_provider_switch_contract", 0, "fail", [f"exception={type(exc).__name__}:{exc}"], "修复跨 Provider 路由、客户端隔离或审计。")
+    failures = [name for name, ok in checks.items() if not ok]
+    evidence = [
+        f"clients=main:{engine.main_client.provider()} exec:{engine.executor_client.provider()} fixed:{_compact_bool_flag(checks['models_fixed'])}",
+        f"routes=default:{_compact_bool_flag(checks['main_default'])} handoff:{_compact_bool_flag(checks['plan_handoff_ready'])} profile:{_compact_bool_flag(checks['profile_routing'])}",
+        f"payload={_compact_bool_flag(checks['payload_isolation'])} audit={_compact_bool_flag(checks['audit_slot'])} sec={_compact_bool_flag(checks['secret_redaction'])}",
+    ]
+    if failures:
+        evidence.append("failures=" + ",".join(failures))
+    score = 100 if not failures else max(25, 100 - len(failures) * 20)
+    return item(
+        "cross_provider_switch_contract",
+        score,
+        status_from_score(score),
+        evidence,
+        "修复主星默认路由、执行星交接、模型固定或跨 Provider 审计。" if failures else "",
+    )
+
+
+def _dual_star_v2_probe_config(config: Any) -> Any:
+    main = replace(
+        config.main_api,
+        slot="main",
+        provider="gpt",
+        api_key="fixture-v2-main-key",
+        base_url="https://main.contract.invalid/v1",
+        model="gpt-5.6-codex",
+        parameter_profile="coding",
+        parameters={"reasoning_effort": "ultra", "verbosity": "low"},
+        timeout_seconds=5.0,
+        retry_count=0,
+        enable_sse=True,
+        key_source="slot",
+    )
+    executor = replace(
+        config.executor_api,
+        slot="executor",
+        provider="grok",
+        api_key="fixture-v2-executor-key",
+        base_url="https://executor.contract.invalid/v1",
+        model="grok-4-fast",
+        parameter_profile="data",
+        parameters={"temperature": 0.0, "top_p": 0.7, "reasoning_effort": "high"},
+        timeout_seconds=5.0,
+        retry_count=0,
+        enable_sse=True,
+        key_source="slot",
+    )
+    return replace(
+        config,
+        main_api=main,
+        executor_api=executor,
+        api_provider=main.provider,
+        api_key=main.api_key,
+        base_url=main.base_url,
+        model=main.model,
+        gpt_api_key=main.api_key,
+        gpt_base_url=main.base_url,
+        grok_api_key=executor.api_key,
+        grok_base_url=executor.base_url,
+        timeout_seconds=5.0,
+        retry_count=0,
+        enable_sse=True,
+    )
+
+
+def check_model_list_failure_contract_v2() -> dict[str, Any]:
+    """Stable report id, v2 semantics: every failure is Provider- and slot-aware."""
+    if DeepSeekClient is None or load_config is None:
+        return item("gemini_model_list_failure_contract", 0, "fail", ["projectling imports unavailable"], "修复模型列表 v2 导入链。")
+    try:
+        import core as projectling_core
+        import projectling as projectling_module
+
+        probe = _dual_star_v2_probe_config(load_config())
+        shapes_ok = (
+            projectling_core._extract_model_ids({"data": [{"id": "gpt-5.6-codex"}]}) == ["gpt-5.6-codex"]
+            and projectling_core._extract_model_ids({"models": [{"name": "grok-4-fast"}]}) == ["grok-4-fast"]
+        )
+
+        missing_texts: list[str] = []
+        missing_ok = True
+        for star in (probe.main_api, probe.executor_api):
+            try:
+                DeepSeekClient(probe, replace(star, api_key=None)).list_models()  # type: ignore[operator]
+                missing_ok = False
+            except Exception as exc:
+                message = str(exc)
+                missing_texts.append(message)
+                missing_ok = missing_ok and star.slot in message and "API Key" in message and star.provider in {"gpt", "grok"}
+
+        class _FakeResponse:
+            def __enter__(self) -> "_FakeResponse":
+                return self
+
+            def __exit__(self, *_args: Any) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return b"{not-json"
+
+        old_urlopen = projectling_module.request.urlopen
+        invalid_json_ok = False
+        network_error_ok = False
+        transport_texts: list[str] = []
+        try:
+            projectling_module.request.urlopen = lambda *_args, **_kwargs: _FakeResponse()  # type: ignore[assignment]
+            try:
+                DeepSeekClient(probe, probe.main_api).list_models()  # type: ignore[operator]
+            except Exception as exc:
+                transport_texts.append(str(exc))
+                invalid_json_ok = "不是合法 JSON" in str(exc)
+
+            def _offline(*_args: Any, **_kwargs: Any) -> Any:
+                raise projectling_module.error.URLError("contract relay offline")
+
+            projectling_module.request.urlopen = _offline  # type: ignore[assignment]
+            try:
+                DeepSeekClient(probe, probe.executor_api).list_models()  # type: ignore[operator]
+            except Exception as exc:
+                transport_texts.append(str(exc))
+                network_error_ok = "模型列表请求失败" in str(exc) and "relay offline" in str(exc)
+        finally:
+            projectling_module.request.urlopen = old_urlopen  # type: ignore[assignment]
+
+        class _FailingClient:
+            def __init__(self, star: Any) -> None:
+                self.star = star
+
+            def list_models(self) -> dict[str, Any]:
+                raise RuntimeError(f"{self.star.provider}/{self.star.slot} simulated offline")
+
+        class _EmptyClient:
+            def __init__(self, star: Any) -> None:
+                self.star = star
+
+            def list_models(self) -> dict[str, Any]:
+                return {"object": "list", "data": []}
+
+        class _Size:
+            def __init__(self, columns: int) -> None:
+                self.columns = columns
+                self.lines = 24
+
+        old_load_config = projectling_core.load_config
+        old_cleanup = projectling_core._cleanup_legacy_runtime
+        old_client_for_star = projectling_core._client_for_star
+        old_terminal_size = projectling_core.shutil.get_terminal_size
+        json_failures: list[str] = []
+        empty_failures: list[str] = []
+        width_rows: list[str] = []
+        cli_texts: list[str] = []
+        try:
+            projectling_core.load_config = lambda: probe
+            projectling_core._cleanup_legacy_runtime = lambda _config: None
+            projectling_core._client_for_star = lambda _config, star: _FailingClient(star)
+            for slot, provider in (("main", "gpt"), ("executor", "grok")):
+                override = f"https://{slot}.override.invalid/v1"
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    rc = projectling_core._cmd_list_models(
+                        argparse.Namespace(json=True, limit=20, base_url=override, timeout=5, slot=slot)
+                    )
+                raw = stdout.getvalue()
+                cli_texts.append(raw)
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError:
+                    payload = {}
+                if not (
+                    rc == 1
+                    and payload.get("ok") is False
+                    and payload.get("provider") == provider
+                    and payload.get("slot") == slot
+                    and payload.get("base_url") == override
+                    and f"{provider}/{slot}" in str(payload.get("error") or "")
+                ):
+                    json_failures.append(slot)
+
+            projectling_core._client_for_star = lambda _config, star: _EmptyClient(star)
+            for width in (16, 20, 24, 32, 48):
+                projectling_core.shutil.get_terminal_size = lambda _fallback=(80, 24), columns=width: _Size(columns)
+                for slot in ("main", "executor"):
+                    stdout = io.StringIO()
+                    with contextlib.redirect_stdout(stdout):
+                        rc = projectling_core._cmd_list_models(
+                            argparse.Namespace(json=False, limit=20, base_url="", timeout=None, slot=slot)
+                        )
+                    text_value = projectling_core._strip_ansi(stdout.getvalue())
+                    cli_texts.append(text_value)
+                    max_width = max((projectling_core._display_width(line) for line in text_value.splitlines()), default=0)
+                    width_rows.append(f"{slot[0]}{width}:{max_width}")
+                    role_marker = "主星" if slot == "main" else "执行星"
+                    if (
+                        rc != 0
+                        or max_width > width
+                        or role_marker not in text_value
+                        or "模型列表为空" not in text_value
+                        or "下一步" not in text_value
+                    ):
+                        empty_failures.append(f"{slot}@{width}")
+        finally:
+            projectling_core.load_config = old_load_config
+            projectling_core._cleanup_legacy_runtime = old_cleanup
+            projectling_core._client_for_star = old_client_for_star
+            projectling_core.shutil.get_terminal_size = old_terminal_size
+
+        combined = "\n".join([*missing_texts, *transport_texts, *cli_texts])
+        secret_ok = not _contains_unmasked_secret(
+            combined,
+            exact_secrets=(str(probe.main_api.api_key), str(probe.executor_api.api_key)),
+        )
+        checks = {
+            "response_shapes": shapes_ok,
+            "missing_key_slots": missing_ok,
+            "invalid_json": invalid_json_ok,
+            "network_error": network_error_ok,
+            "slot_json": not json_failures,
+            "empty_ui": not empty_failures,
+            "secret_redaction": secret_ok,
+        }
+    except Exception as exc:
+        return item("gemini_model_list_failure_contract", 0, "fail", [f"exception={type(exc).__name__}:{exc}"], "修复模型列表 v2 合同。")
+    failures = [name for name, ok in checks.items() if not ok]
+    evidence = [
+        f"shape={_compact_bool_flag(shapes_ok)} missing={_compact_bool_flag(missing_ok)} transport={_compact_bool_flag(invalid_json_ok)}/{_compact_bool_flag(network_error_ok)}",
+        f"slot_json={_compact_bool_flag(not json_failures)} fail={_compact_list_or_dash(json_failures)}",
+        f"empty_ui={_compact_bool_flag(not empty_failures)} widths={','.join(width_rows[:10])}",
+        f"sec={_compact_bool_flag(secret_ok)}",
+    ]
+    if failures:
+        evidence.append("failures=" + ",".join(failures))
+    score = 100 if not failures else max(25, 100 - len(failures) * 15)
+    return item(
+        "gemini_model_list_failure_contract",
+        score,
+        status_from_score(score),
+        evidence,
+        "修复多 Provider 模型列表的星位、失败 JSON、窄屏恢复指引或脱敏。" if failures else "",
+    )
+
+
+def check_api_test_failure_contract_v2() -> dict[str, Any]:
+    if load_config is None:
+        return item("gemini_api_test_failure_contract", 0, "fail", ["projectling imports unavailable"], "修复 api-test v2 导入链。")
+    try:
+        import core as projectling_core
+
+        probe = _dual_star_v2_probe_config(load_config())
+
+        class _BadClient:
+            def __init__(self, star: Any) -> None:
+                self.star_config = star
+
+            def provider(self) -> str:
+                return str(self.star_config.provider)
+
+            def chat_completions(self, **kwargs: Any) -> dict[str, Any]:
+                raise RuntimeError(f"bad model {kwargs.get('model')} on {self.star_config.slot}")
+
+            def chat_completions_stream(self, **kwargs: Any) -> Iterable[dict[str, Any]]:
+                raise RuntimeError(f"bad model {kwargs.get('model')} on {self.star_config.slot}")
+                yield {}
+
+        old_load_config = projectling_core.load_config
+        old_cleanup = projectling_core._cleanup_legacy_runtime
+        old_client_for_star = projectling_core._client_for_star
+        payloads: dict[str, dict[str, Any]] = {}
+        return_codes: dict[str, int] = {}
+        raw_outputs: list[str] = []
+        try:
+            projectling_core.load_config = lambda: probe
+            projectling_core._cleanup_legacy_runtime = lambda _config: None
+            projectling_core._client_for_star = lambda _config, star: _BadClient(star)
+            for slot, no_stream in (("main", True), ("executor", False), ("both", True)):
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    rc = projectling_core._cmd_api_test(
+                        argparse.Namespace(
+                            json=True,
+                            no_stream=no_stream,
+                            model="",
+                            base_url="",
+                            timeout=None,
+                            slot=slot,
+                        )
+                    )
+                raw = stdout.getvalue()
+                raw_outputs.append(raw)
+                return_codes[slot] = rc
+                try:
+                    payloads[slot] = json.loads(raw)
+                except json.JSONDecodeError:
+                    payloads[slot] = {}
+
+            override_stdout = io.StringIO()
+            with contextlib.redirect_stdout(override_stdout):
+                override_rc = projectling_core._cmd_api_test(
+                    argparse.Namespace(
+                        json=True,
+                        no_stream=True,
+                        model="gpt-contract-override",
+                        base_url="https://main.api-test.override.invalid/v1",
+                        timeout=5,
+                        slot="main",
+                    )
+                )
+            raw_outputs.append(override_stdout.getvalue())
+            try:
+                override_payload = json.loads(override_stdout.getvalue())
+            except json.JSONDecodeError:
+                override_payload = {}
+
+            missing_probe = replace(probe, executor_api=replace(probe.executor_api, api_key=None))
+            projectling_core.load_config = lambda: missing_probe
+            missing_stdout = io.StringIO()
+            with contextlib.redirect_stdout(missing_stdout):
+                missing_rc = projectling_core._cmd_api_test(
+                    argparse.Namespace(json=True, no_stream=True, model="", base_url="", timeout=None, slot="executor")
+                )
+            raw_outputs.append(missing_stdout.getvalue())
+            try:
+                missing_payload = json.loads(missing_stdout.getvalue())
+            except json.JSONDecodeError:
+                missing_payload = {}
+        finally:
+            projectling_core.load_config = old_load_config
+            projectling_core._cleanup_legacy_runtime = old_cleanup
+            projectling_core._client_for_star = old_client_for_star
+
+        main_payload = payloads.get("main", {})
+        executor_payload = payloads.get("executor", {})
+        both_payload = payloads.get("both", {})
+        main_results = main_payload.get("results") if isinstance(main_payload.get("results"), list) else []
+        executor_results = executor_payload.get("results") if isinstance(executor_payload.get("results"), list) else []
+        both_results = both_payload.get("results") if isinstance(both_payload.get("results"), list) else []
+        override_results = override_payload.get("results") if isinstance(override_payload.get("results"), list) else []
+        checks = {
+            "main_slot": return_codes.get("main") == 1 and main_payload.get("provider") == "gpt" and main_payload.get("base_url") == probe.main_api.base_url and len(main_results) == 1 and main_results[0].get("slot") == "main",
+            "executor_slot": return_codes.get("executor") == 1 and executor_payload.get("provider") == "grok" and executor_payload.get("base_url") == probe.executor_api.base_url and executor_payload.get("stream") is True and len(executor_results) == 1 and executor_results[0].get("slot") == "executor",
+            "both_slots": return_codes.get("both") == 1 and both_payload.get("provider") == "gpt+grok" and both_payload.get("base_url") == "multiple" and len(both_results) == 2 and {row.get("slot") for row in both_results} == {"main", "executor"},
+            "override_isolated": override_rc == 1 and override_payload.get("provider") == "gpt" and override_payload.get("base_url") == "https://main.api-test.override.invalid/v1" and override_payload.get("override_target_slot") == "main" and len(override_results) == 1 and override_results[0].get("model") == "gpt-contract-override",
+            "missing_slot": missing_rc == 1 and missing_payload.get("error") == "api_key_missing" and missing_payload.get("missing_slots") == ["executor"] and missing_payload.get("main_provider") == "gpt" and missing_payload.get("executor_provider") == "grok",
+        }
+        combined = "\n".join(raw_outputs)
+        checks["secret_redaction"] = not _contains_unmasked_secret(
+            combined,
+            exact_secrets=(str(probe.main_api.api_key), str(probe.executor_api.api_key)),
+        )
+    except Exception as exc:
+        return item("gemini_api_test_failure_contract", 0, "fail", [f"exception={type(exc).__name__}:{exc}"], "修复 api-test v2 合同。")
+    failures = [name for name, ok in checks.items() if not ok]
+    evidence = [
+        f"slots=main:{_compact_bool_flag(checks['main_slot'])} exec:{_compact_bool_flag(checks['executor_slot'])} both:{_compact_bool_flag(checks['both_slots'])}",
+        f"override={_compact_bool_flag(checks['override_isolated'])} missing={_compact_bool_flag(checks['missing_slot'])}",
+        f"sec={_compact_bool_flag(checks['secret_redaction'])}",
+    ]
+    if failures:
+        evidence.append("failures=" + ",".join(failures))
+    score = 100 if not failures else max(25, 100 - len(failures) * 20)
+    return item(
+        "gemini_api_test_failure_contract",
+        score,
+        status_from_score(score),
+        evidence,
+        "修复 api-test 主星/执行星目标、跨 Provider 失败 shape、覆盖隔离或缺 Key 指引。" if failures else "",
+    )
+
+
+def check_settings_status_width_contract_v2() -> dict[str, Any]:
+    if load_config is None:
+        return item("settings_status_width_contract", 0, "fail", ["projectling imports unavailable"], "修复 Settings v2 导入链。")
+    try:
+        import core as projectling_core
+
+        probe = _dual_star_v2_probe_config(load_config())
+
+        class _Size:
+            def __init__(self, columns: int) -> None:
+                self.columns = columns
+                self.lines = 24
+
+        old_terminal_size = projectling_core.shutil.get_terminal_size
+        old_prompt_line = projectling_core._prompt_line
+        width_failures: list[str] = []
+        marker_failures: list[str] = []
+        rows: list[str] = []
+        outputs: list[str] = []
+        provider_menu_ok = False
+        try:
+            projectling_core._prompt_line = lambda _prompt="": "0"
+            for width in (16, 20, 24, 32, 40, 48, 80):
+                projectling_core.shutil.get_terminal_size = lambda _fallback=(80, 24), columns=width: _Size(columns)
+                pages = {
+                    "root": lambda: projectling_core._render_settings_root(probe),
+                    "main": lambda: projectling_core._render_api_settings(probe, "main"),
+                    "executor": lambda: projectling_core._render_api_settings(probe, "executor"),
+                    "status": lambda: projectling_core._render_surface_status(projectling_core._build_surface_status_payload(probe)),
+                }
+                for name, renderer in pages.items():
+                    stdout = io.StringIO()
+                    with contextlib.redirect_stdout(stdout):
+                        renderer()
+                    text_value = projectling_core._strip_ansi(stdout.getvalue())
+                    outputs.append(text_value)
+                    max_width = max((projectling_core._display_width(line) for line in text_value.splitlines()), default=0)
+                    rows.append(f"{name[0]}{width}:{max_width}")
+                    if max_width > width:
+                        width_failures.append(f"{name}@{width}:{max_width}")
+                    required = {
+                        "root": ("设置中心", "主星", "执行星", "搜索", "系统"),
+                        "main": ("主星 API 配置", "GPT / Codex", "API Key", "场景预设", "高级参数", "模型列表", "连通测试"),
+                        "executor": ("执行星 API 配置", "Grok", "API Key", "场景预设", "高级参数", "模型列表", "连通测试"),
+                        "status": ("PROJECT凌 状态", "主星 API", "执行星 API", "主星模型", "执行星模型", "主星 Key", "执行星 Key"),
+                    }[name]
+                    if any(marker not in text_value for marker in required):
+                        marker_failures.append(f"{name}@{width}")
+
+            projectling_core.shutil.get_terminal_size = lambda _fallback=(80, 24): _Size(80)
+            menu_stdout = io.StringIO()
+            with contextlib.redirect_stdout(menu_stdout):
+                projectling_core._choose_provider_interactive(probe, probe.main_api)
+            menu_text = projectling_core._strip_ansi(menu_stdout.getvalue())
+            outputs.append(menu_text)
+            provider_menu_ok = all(label in menu_text for label in ("GPT / Codex", "Gemini", "Grok", "DeepSeek", "当前"))
+        finally:
+            projectling_core.shutil.get_terminal_size = old_terminal_size
+            projectling_core._prompt_line = old_prompt_line
+
+        source = (PROJECTLING_DIR / "core.py").read_text(encoding="utf-8", errors="replace")
+        zsh_source = (PROJECTLING_DIR / "projectling.zsh").read_text(encoding="utf-8", errors="replace")
+        route_ok = (
+            all(
+                token in source
+                for token in (
+                    '"/settings main"',
+                    '"/settings executor"',
+                    'normalized_tab in {"gpt", "codex", "openai"}',
+                    'normalized_tab == "gemini"',
+                    'normalized_tab in {"grok", "xai"}',
+                    'normalized_tab == "deepseek"',
+                    'normalized_tab in {"main", "main_api", "main-api", "planner"}',
+                    'normalized_tab in {"executor", "executor_api", "executor-api", "support"}',
+                )
+            )
+            and all(
+                token in zsh_source
+                for token in (
+                    "/gpt|/codex|/openai)",
+                    "/gemini)",
+                    "/grok|/xai)",
+                    "/deepseek)",
+                    "main|main_api|main-api|planner",
+                    "executor|executor_api|executor-api|support",
+                )
+            )
+        )
+        combined = "\n".join(outputs)
+        secret_ok = not _contains_unmasked_secret(
+            combined,
+            exact_secrets=(str(probe.main_api.api_key), str(probe.executor_api.api_key)),
+        )
+        checks = {
+            "widths": not width_failures,
+            "dual_star_markers": not marker_failures,
+            "provider_menu": provider_menu_ok,
+            "direct_routes": route_ok,
+            "slot_isolation": "grok-4-fast" not in outputs[1] and "gpt-5.6-codex" not in outputs[2],
+            "secret_redaction": secret_ok,
+        }
+    except Exception as exc:
+        return item("settings_status_width_contract", 0, "fail", [f"exception={type(exc).__name__}:{exc}"], "修复 Settings v2 合同。")
+    failures = [name for name, ok in checks.items() if not ok]
+    evidence = [
+        f"widths={_compact_bool_flag(not width_failures)} rows={','.join(rows[:12])}",
+        f"markers={_compact_bool_flag(not marker_failures)} fail={_compact_list_or_dash(marker_failures[:4])}",
+        f"providers={_compact_bool_flag(provider_menu_ok)} routes={_compact_bool_flag(route_ok)} isolation={_compact_bool_flag(checks['slot_isolation'])}",
+        f"sec={_compact_bool_flag(secret_ok)}",
+    ]
+    if failures:
+        evidence.append("failures=" + ",".join(failures))
+    score = 100 if not failures else max(25, 100 - len(failures) * 20)
+    return item(
+        "settings_status_width_contract",
+        score,
+        status_from_score(score),
+        evidence,
+        "修复主星/执行星 Settings、状态面、Provider 菜单、直达路由或窄屏布局。" if failures else "",
+    )
+
+
+def check_diagnostic_output_contract_v2() -> dict[str, Any]:
+    if load_config is None:
+        return item("gemini_diagnostic_output_contract", 0, "fail", ["projectling imports unavailable"], "修复诊断输出 v2 导入链。")
+    try:
+        import core as projectling_core
+
+        config = load_config()
+        env_path = config.env_file_path
+        before_digest = hashlib.sha256(env_path.read_bytes()).hexdigest() if env_path.is_file() else "missing"
+        fixture_env = os.environ.copy()
+        fixture_env.update(
+            {
+                "AITERMUX_HOME": str(AITERMUX_HOME),
+                "AITERMUX_AIDEBUG_DIR": str(AIDEBUG_DIR),
+                "PROJECTLING_DIR": str(PROJECTLING_DIR),
+                "PROJECTLING_MAIN_PROVIDER": "gpt",
+                "PROJECTLING_MAIN_API_KEY": "fixture-public-main-key",
+                "PROJECTLING_MAIN_BASE_URL": "http://127.0.0.1:9/v1",
+                "PROJECTLING_MAIN_MODEL": "gpt-5.6-codex",
+                "PROJECTLING_MAIN_RETRY_COUNT": "0",
+                "PROJECTLING_MAIN_TIMEOUT_SECONDS": "5",
+                "PROJECTLING_EXECUTOR_PROVIDER": "grok",
+                "PROJECTLING_EXECUTOR_API_KEY": "fixture-public-executor-key",
+                "PROJECTLING_EXECUTOR_BASE_URL": "http://127.0.0.1:9/v1",
+                "PROJECTLING_EXECUTOR_MODEL": "grok-4-fast",
+                "PROJECTLING_EXECUTOR_RETRY_COUNT": "0",
+                "PROJECTLING_EXECUTOR_TIMEOUT_SECONDS": "5",
+                "PYTHONUTF8": "1",
+                "PYTHONIOENCODING": "utf-8",
+            }
+        )
+        core_path = str(PROJECTLING_DIR / "core.py")
+
+        def _run(args: list[str], *, width: int = 80) -> subprocess.CompletedProcess[str]:
+            env = fixture_env.copy()
+            env["COLUMNS"] = str(width)
+            return subprocess.run(
+                [sys.executable, core_path, *args],
+                cwd=str(PROJECTLING_DIR),
+                env=env,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                timeout=20,
+                check=False,
+            )
+
+        json_specs = {
+            "models_main": (["list-models", "--slot", "main", "--json", "--base-url", "http://127.0.0.1:9/v1", "--timeout", "5"], "gpt", "main"),
+            "models_executor": (["/models", "--slot", "executor", "--json", "--base-url", "http://127.0.0.1:9/v1", "--timeout", "5"], "grok", "executor"),
+            "api_main": (["api-test", "--slot", "main", "--json", "--no-stream", "--base-url", "http://127.0.0.1:9/v1", "--timeout", "5"], "gpt", "main"),
+            "api_executor": (["/api-test", "--slot", "executor", "--json", "--no-stream", "--base-url", "http://127.0.0.1:9/v1", "--timeout", "5"], "grok", "executor"),
+            "api_both": (["api-test", "--slot", "both", "--json", "--no-stream", "--base-url", "http://127.0.0.1:9/v1", "--timeout", "5"], "gpt+grok", "both"),
+        }
+        json_failures: list[str] = []
+        completed_rows: list[subprocess.CompletedProcess[str]] = []
+        for name, (args, provider, slot) in json_specs.items():
+            completed = _run(args)
+            completed_rows.append(completed)
+            try:
+                payload = json.loads(completed.stdout)
+            except json.JSONDecodeError:
+                payload = {}
+            if not (
+                completed.returncode == 1
+                and payload.get("ok") is False
+                and payload.get("provider") == provider
+                and payload.get("slot") == slot
+                and bool(payload.get("error"))
+            ):
+                json_failures.append(name)
+
+        human_failures: list[str] = []
+        width_rows: list[str] = []
+        for width in (16, 20, 24, 32, 48):
+            for name, args, role_marker in (
+                ("models-main", ["list-models", "--slot", "main", "--base-url", "http://127.0.0.1:9/v1", "--timeout", "5"], "主星"),
+                ("models-exec", ["list-models", "--slot", "executor", "--base-url", "http://127.0.0.1:9/v1", "--timeout", "5"], "执行星"),
+                ("api-main", ["api-test", "--slot", "main", "--no-stream", "--base-url", "http://127.0.0.1:9/v1", "--timeout", "5"], "主星"),
+                ("api-exec", ["api-test", "--slot", "executor", "--no-stream", "--base-url", "http://127.0.0.1:9/v1", "--timeout", "5"], "执行星"),
+            ):
+                completed = _run(args, width=width)
+                completed_rows.append(completed)
+                text_value = _strip_ansi_probe(f"{completed.stdout}\n{completed.stderr}")
+                max_width = max((projectling_core._display_width(line) for line in text_value.splitlines()), default=0)
+                width_rows.append(f"{name[0]}{width}:{max_width}")
+                if (
+                    completed.returncode != 1
+                    or max_width > width
+                    or role_marker not in text_value
+                    or "下一步" not in text_value
+                ):
+                    human_failures.append(f"{name}@{width}")
+
+        after_digest = hashlib.sha256(env_path.read_bytes()).hexdigest() if env_path.is_file() else "missing"
+        combined = "\n".join(f"{row.stdout}\n{row.stderr}" for row in completed_rows)
+        alias_runtime_ok = not any(name in json_failures for name in ("models_executor", "api_executor"))
+        checks = {
+            "json_shapes": not json_failures,
+            "alias_runtime": alias_runtime_ok,
+            "human_widths": not human_failures,
+            "no_env_mutation": before_digest == after_digest,
+            "secret_redaction": not _contains_unmasked_secret(
+                combined,
+                exact_secrets=("fixture-public-main-key", "fixture-public-executor-key"),
+            ),
+        }
+    except Exception as exc:
+        return item("gemini_diagnostic_output_contract", 0, "fail", [f"exception={type(exc).__name__}:{exc}"], "修复诊断输出 v2 合同。")
+    failures = [name for name, ok in checks.items() if not ok]
+    evidence = [
+        f"json={_compact_bool_flag(not json_failures)} fail={_compact_list_or_dash(json_failures)}",
+        f"alias_runtime=models:{_compact_bool_flag(alias_runtime_ok)} api:{_compact_bool_flag(alias_runtime_ok)} slots:main,executor,both",
+        f"human={_compact_bool_flag(not human_failures)} widths={','.join(width_rows[:10])}",
+        f"env={_compact_bool_flag(checks['no_env_mutation'])} sec={_compact_bool_flag(checks['secret_redaction'])}",
+    ]
+    if failures:
+        evidence.append("failures=" + ",".join(failures))
+    score = 100 if not failures else max(25, 100 - len(failures) * 25)
+    return item(
+        "gemini_diagnostic_output_contract",
+        score,
+        status_from_score(score),
+        evidence,
+        "修复公开诊断命令的星位 JSON、窄屏输出、别名、配置只读或脱敏。" if failures else "",
+    )
+
+
+def check_model_list_role_marker_contract_v2() -> dict[str, Any]:
+    if load_config is None:
+        return item("gemini_model_list_role_marker_contract", 0, "fail", ["projectling imports unavailable"], "修复模型角色标记 v2 导入链。")
+    try:
+        import core as projectling_core
+
+        probe = _dual_star_v2_probe_config(load_config())
+        payload = {
+            "object": "list",
+            "data": [
+                {"id": probe.main_api.model, "object": "model"},
+                {"id": probe.executor_api.model, "object": "model"},
+                {"id": "gemini-3-flash", "object": "model"},
+            ],
+        }
+
+        class _ModelClient:
+            def __init__(self, star: Any) -> None:
+                self.star = star
+
+            def list_models(self) -> dict[str, Any]:
+                return payload
+
+        class _Size:
+            def __init__(self, columns: int) -> None:
+                self.columns = columns
+                self.lines = 24
+
+        old_load_config = projectling_core.load_config
+        old_cleanup = projectling_core._cleanup_legacy_runtime
+        old_client_for_star = projectling_core._client_for_star
+        old_terminal_size = projectling_core.shutil.get_terminal_size
+        width_failures: list[str] = []
+        marker_failures: list[str] = []
+        combined_outputs: list[str] = []
+        rows: list[str] = []
+        try:
+            projectling_core.load_config = lambda: probe
+            projectling_core._cleanup_legacy_runtime = lambda _config: None
+            projectling_core._client_for_star = lambda _config, star: _ModelClient(star)
+            for width in (16, 20, 24, 32, 40, 48, 80, 120):
+                projectling_core.shutil.get_terminal_size = lambda _fallback=(80, 24), columns=width: _Size(columns)
+                for slot in ("main", "executor"):
+                    stdout = io.StringIO()
+                    with contextlib.redirect_stdout(stdout):
+                        rc = projectling_core._cmd_list_models(
+                            argparse.Namespace(json=False, limit=20, base_url="", timeout=None, slot=slot)
+                        )
+                    text_value = projectling_core._strip_ansi(stdout.getvalue())
+                    combined_outputs.append(text_value)
+                    max_width = max((projectling_core._display_width(line) for line in text_value.splitlines()), default=0)
+                    rows.append(f"{slot[0]}{width}:{max_width}")
+                    model_rows = [line for line in text_value.splitlines() if line.startswith(("01. ", "02. "))]
+                    if rc != 0 or max_width > width or len(model_rows) < 2:
+                        width_failures.append(f"{slot}@{width}")
+                        continue
+                    main_marker = "主" if width < 32 else "主星"
+                    executor_marker = "执" if width < 32 else "执行星"
+                    if main_marker not in model_rows[0] or executor_marker not in model_rows[1]:
+                        marker_failures.append(f"{slot}@{width}")
+
+            for width in (16, 20, 24, 32):
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    projectling_core._print_indexed_model(1, "shared-provider-model", "主星 / 执行星", width=width)
+                text_value = projectling_core._strip_ansi(stdout.getvalue())
+                combined_outputs.append(text_value)
+                expected = ("主", "执") if width < 32 else ("主星", "执行星")
+                if any(marker not in text_value for marker in expected):
+                    marker_failures.append(f"shared@{width}")
+        finally:
+            projectling_core.load_config = old_load_config
+            projectling_core._cleanup_legacy_runtime = old_cleanup
+            projectling_core._client_for_star = old_client_for_star
+            projectling_core.shutil.get_terminal_size = old_terminal_size
+
+        combined = "\n".join(combined_outputs)
+        checks = {
+            "widths": not width_failures,
+            "role_priority": not marker_failures,
+            "secret_redaction": not _contains_unmasked_secret(
+                combined,
+                exact_secrets=(str(probe.main_api.api_key), str(probe.executor_api.api_key)),
+            ),
+        }
+    except Exception as exc:
+        return item("gemini_model_list_role_marker_contract", 0, "fail", [f"exception={type(exc).__name__}:{exc}"], "修复模型角色标记 v2 合同。")
+    failures = [name for name, ok in checks.items() if not ok]
+    evidence = [
+        f"widths={_compact_bool_flag(not width_failures)} rows={','.join(rows[:12])}",
+        f"markers={_compact_bool_flag(not marker_failures)} fail={_compact_list_or_dash(marker_failures[:6])}",
+        f"sec={_compact_bool_flag(checks['secret_redaction'])}",
+    ]
+    if failures:
+        evidence.append("failures=" + ",".join(failures))
+    score = 100 if not failures else max(25, 100 - len(failures) * 25)
+    return item(
+        "gemini_model_list_role_marker_contract",
+        score,
+        status_from_score(score),
+        evidence,
+        "修复模型列表中主星/执行星标记优先级、同模型双角色、窄屏布局或脱敏。" if failures else "",
+    )
+
+
 def build_health() -> dict[str, Any]:
     history = _load_health_history(limit=12)
     state_before, state_before_error = _capture_runtime_state("aidebug-health-before")
@@ -12881,18 +14422,19 @@ def build_health() -> dict[str, Any]:
             check_gemini_parameter_support_matrix(),
             check_zsh_diagnostic_alias_execution(),
             check_deepseek_v4_transport(),
-            check_gemini_settings_contract(),
-            check_gemini_settings_persistence_contract(),
+            check_multi_provider_parameter_contract(),
+            check_relay_multi_provider_local_contract(),
+            check_dual_star_settings_persistence_contract(),
             check_settings_exception_restoration_contract(),
-            check_api_settings_provider_persistence_contract(),
-            check_provider_switch_contract(),
+            check_api_settings_star_isolation_contract(),
+            check_cross_provider_switch_contract(),
             check_gemini_planner_review_contract(),
-            check_gemini_model_list_failure_contract(),
-            check_gemini_api_test_failure_contract(),
+            check_model_list_failure_contract_v2(),
+            check_api_test_failure_contract_v2(),
             check_gemini_api_test_model_safety_contract(),
-            check_settings_status_width_contract(),
-            check_gemini_diagnostic_output_contract(),
-            check_gemini_model_list_role_marker_contract(),
+            check_settings_status_width_contract_v2(),
+            check_diagnostic_output_contract_v2(),
+            check_model_list_role_marker_contract_v2(),
             check_gemini_model_list_taxonomy_contract(),
             check_runner_concurrency(),
             check_persona_split(),
@@ -12995,18 +14537,19 @@ def build_termux_report() -> dict[str, Any]:
             check_focus_anchor_contract(),
             check_route_alignment(),
             check_api_provider_config(),
-            check_gemini_settings_contract(),
-            check_gemini_settings_persistence_contract(),
+            check_multi_provider_parameter_contract(),
+            check_relay_multi_provider_local_contract(),
+            check_dual_star_settings_persistence_contract(),
             check_settings_exception_restoration_contract(),
-            check_api_settings_provider_persistence_contract(),
-            check_provider_switch_contract(),
+            check_api_settings_star_isolation_contract(),
+            check_cross_provider_switch_contract(),
             check_gemini_planner_review_contract(),
-            check_gemini_model_list_failure_contract(),
-            check_gemini_api_test_failure_contract(),
+            check_model_list_failure_contract_v2(),
+            check_api_test_failure_contract_v2(),
             check_gemini_api_test_model_safety_contract(),
-            check_settings_status_width_contract(),
-            check_gemini_diagnostic_output_contract(),
-            check_gemini_model_list_role_marker_contract(),
+            check_settings_status_width_contract_v2(),
+            check_diagnostic_output_contract_v2(),
+            check_model_list_role_marker_contract_v2(),
             check_gemini_model_list_taxonomy_contract(),
             check_runner_concurrency(),
             check_persona_split(),
@@ -13084,18 +14627,19 @@ def build_windows_report(*, repair: bool = False, capture_ui: bool = False) -> d
             checks.append(check_windows_launcher_gemini_surface())
             checks.append(check_launcher_external_gate_contract())
             checks.append(check_deepseek_v4_transport())
-            checks.append(check_gemini_settings_contract())
-            checks.append(check_gemini_settings_persistence_contract())
+            checks.append(check_multi_provider_parameter_contract())
+            checks.append(check_relay_multi_provider_local_contract())
+            checks.append(check_dual_star_settings_persistence_contract())
             checks.append(check_settings_exception_restoration_contract())
-            checks.append(check_api_settings_provider_persistence_contract())
-            checks.append(check_provider_switch_contract())
+            checks.append(check_api_settings_star_isolation_contract())
+            checks.append(check_cross_provider_switch_contract())
             checks.append(check_gemini_planner_review_contract())
-            checks.append(check_gemini_model_list_failure_contract())
-            checks.append(check_gemini_api_test_failure_contract())
+            checks.append(check_model_list_failure_contract_v2())
+            checks.append(check_api_test_failure_contract_v2())
             checks.append(check_gemini_api_test_model_safety_contract())
-            checks.append(check_settings_status_width_contract())
-            checks.append(check_gemini_diagnostic_output_contract())
-            checks.append(check_gemini_model_list_role_marker_contract())
+            checks.append(check_settings_status_width_contract_v2())
+            checks.append(check_diagnostic_output_contract_v2())
+            checks.append(check_model_list_role_marker_contract_v2())
             checks.append(check_gemini_model_list_taxonomy_contract())
             if capture_ui:
                 capture = _capture_windows_ui_screenshot()
@@ -13216,23 +14760,23 @@ def write_next_plan_artifact(payload: dict[str, Any]) -> Path:
     commands = [
         {
             "label": "windows_profile_local",
-            "command": 'python "C:\\Users\\%USERNAME%\\Desktop\\PROJECT凌\\aidebug\\runner\\projectling_auto.py" --rounds 1 --profile local',
+            "command": "python aidebug/runner/projectling_auto.py --rounds 1 --profile local",
         },
         {
             "label": "wsl_profile_live",
-            "command": "& 'C:\\Windows\\Sysnative\\wsl.exe' -d Ubuntu-ProjectLing -- bash -lc 'cd /mnt/c/Users/$USER/Desktop/PROJECT凌 && python3 aidebug/runner/projectling_auto.py --rounds 1 --profile live'",
+            "command": "wsl.exe -d Ubuntu-ProjectLing -- bash -lc 'python3 aidebug/runner/projectling_auto.py --rounds 1 --profile live'",
         },
         {
             "label": "wsl_profile_full",
-            "command": "& 'C:\\Windows\\Sysnative\\wsl.exe' -d Ubuntu-ProjectLing -- bash -lc 'cd /mnt/c/Users/$USER/Desktop/PROJECT凌 && python3 aidebug/runner/projectling_auto.py --rounds 1 --profile full'",
+            "command": "wsl.exe -d Ubuntu-ProjectLing -- bash -lc 'python3 aidebug/runner/projectling_auto.py --rounds 1 --profile full'",
         },
         {
             "label": "windows_health",
-            "command": 'python "C:\\Users\\%USERNAME%\\Desktop\\PROJECT凌\\aidebug\\runner\\aidebug_health.py"',
+            "command": "python aidebug/runner/aidebug_health.py",
         },
         {
             "label": "wsl_health",
-            "command": "& 'C:\\Windows\\Sysnative\\wsl.exe' -d Ubuntu-ProjectLing -- bash -lc 'cd /mnt/c/Users/$USER/Desktop/PROJECT凌 && python3 aidebug/runner/aidebug_health.py'",
+            "command": "wsl.exe -d Ubuntu-ProjectLing -- bash -lc 'python3 aidebug/runner/aidebug_health.py'",
         },
     ]
     thresholds = [
@@ -13306,7 +14850,7 @@ def write_next_plan_artifact(payload: dict[str, Any]) -> Path:
         },
         {
             "check": "settings_status_width_contract",
-            "expect": "ok / 100, compact Settings/API/model-list/api-test output fits widths 16/20/24/32/40/48, keeps provider/status/next-action copy, and redacts secrets",
+            "expect": "ok / 100, split main/executor Settings and status output fits widths 16/20/24/32/40/48/80, keeps Provider/model/profile/diagnostic copy isolated by star, and redacts secrets",
         },
         {
             "check": "windows_launcher_gemini_surface",
@@ -13318,11 +14862,11 @@ def write_next_plan_artifact(payload: dict[str, Any]) -> Path:
         },
         {
             "check": "gemini_diagnostic_output_contract",
-            "expect": "ok / 100, public Gemini diagnostic CLI override failures return structured JSON, compact human output fits widths 16/20/24/32/40/48 with provider/model/base/status/next-action copy, config/env is unchanged, and secrets are redacted",
+            "expect": "ok / 100, stable diagnostic report id now covers GPT/Grok main/executor/both CLI and slash aliases, structured slot-aware JSON, widths 16/20/24/32/48, config/env no-mutation, and secret redaction",
         },
         {
             "check": "gemini_model_list_role_marker_contract",
-            "expect": "ok / 100, Gemini model-list success output marks the configured planner/main-star and executor/flash-star models, fits widths 16/20/24/32/40/48/80/120, and redacts secrets",
+            "expect": "ok / 100, stable model-list report id covers cross-Provider main/executor role markers, preserves 主/执 priority including a shared model, fits widths 16/20/24/32/40/48/80/120, and redacts secrets",
         },
         {
             "check": "gemini_model_list_taxonomy_contract",
@@ -13500,6 +15044,8 @@ def write_next_plan_artifact(payload: dict[str, Any]) -> Path:
         "",
         "## Next Commands",
         "",
+        "- Run every command from the ProjectLing repository root.",
+        "",
         "```powershell",
         *[str(command["command"]) for command in commands],
         "```",
@@ -13509,7 +15055,7 @@ def write_next_plan_artifact(payload: dict[str, Any]) -> Path:
         f"- required_count: {len(thresholds)}",
         "- full_expectations: see JSON `thresholds` and `threshold_summary.checks`.",
         f"- provider_cache_policy: cache_policy=not_required_for_{active_provider}" if active_provider != "deepseek" else "- provider_cache_policy: cache_hit_rate >= 85",
-        "- coverage_groups: profiles; memory/context; Gemini diagnostics; Settings; launcher/zsh; provider cache compatibility; Termux readiness.",
+        "- coverage_groups: profiles; memory/context; multi-Provider diagnostics; dual-star Settings; launcher/zsh; provider cache compatibility; Termux readiness.",
         "- artifact_contract: profile sample sources, detail JSON integrity, freshness trend, critical summary, Android Termux criteria.",
         "",
         "## Threshold Summary",
